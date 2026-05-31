@@ -1,3 +1,27 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: UserToolResultMessage.tsx — Tool Result Semantic Tree
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// UserToolResultMessage(...)
+// ──────────────────────────
+// Reconstructs the tool result from a single "tool_result block" into a
+// contextual result semantic tree. Without this function, the upper layer
+// can only see a raw string, unable to distinguish different user actions
+// like cancel, reject, error, and success.
+//
+// Dispatch by result type:
+// 1. Retrieves original tool use via useGetToolFromMessages(tool_use_id)
+// 2. CANCEL_MESSAGE → UserToolCanceledMessage
+// 3. REJECT_MESSAGE / INTERRUPT_MESSAGE_FOR_TOOL_USE → UserToolRejectMessage
+// 4. param.is_error → UserToolErrorMessage
+// 5. Other success results → UserToolSuccessMessage
+//
+// This is a crucial semantic layer: cancel, reject, error, and success each
+// produce different visual outputs (color, icon, message text) even though
+// they all come from the same "tool_result block" API structure.
+// ============================================================================
+
 import { c as _c } from "react/compiler-runtime";
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import * as React from 'react';

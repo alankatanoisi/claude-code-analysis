@@ -9,6 +9,39 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/gr
 import { isFastModeAvailable, isFastModeEnabled } from '../../utils/fastMode.js';
 import { getNewlineInstructions } from './utils.js';
 
+/* ARCHITECTURE NOTE: PromptInputHelpMenu — keyboard shortcut reference (PromptInputHelpMenu.tsx:1-358)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * Displays available keyboard shortcuts and input mode hints below the
+ * prompt input area.
+ *
+ * Key patterns:
+ *
+ * 1. Shortcut display: useShortcutDisplay for each action (toggleTranscript,
+ *    toggleTodos, etc.) — adapts to user's actual keymap configuration.
+ *
+ * 2. formatShortcut: Adds spaces around "+" for readability ("ctrl+o" →
+ *    "ctrl + o").
+ *
+ * 3. Feature-gated items: feature() gates for voice mode, swarm mode,
+ *    and other experimental features.
+ *
+ * 4. Fast mode: isFastModeEnabled/isFastModeAvailable for showing fast
+ *    mode toggle hint.
+ *
+ * 5. Customization check: isKeybindingCustomizationEnabled for showing
+ *    keybinding customization hint.
+ *
+ * 6. Platform awareness: getPlatform for platform-specific shortcuts.
+ *
+ * 7. GrowthBook integration: getFeatureValue_CACHED_MAY_BE_STALE for
+ *    feature flag values.
+ *
+ * 8. Layout options: dimColor, fixedWidth, gap, paddingX for flexible
+ *    display in different contexts.
+ *
+ * See: analysis/components/PromptInput/ — help menu
+ */
+
 /** Format a shortcut for display in the help menu (e.g., "ctrl+o" → "ctrl + o") */
 function formatShortcut(shortcut: string): string {
   return shortcut.replace(/\+/g, ' + ');

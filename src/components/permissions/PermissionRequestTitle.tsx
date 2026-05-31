@@ -3,6 +3,26 @@ import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import type { Theme } from '../../utils/theme.js';
 import type { WorkerBadgeProps } from './WorkerBadge.js';
+
+/* ARCHITECTURE NOTE: PermissionRequestTitle — permission dialog header (PermissionRequestTitle.tsx:1-66)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders the title and optional worker badge for permission request dialogs.
+ *
+ * Key patterns:
+ *
+ * 1. Title display: Bold text with configurable color (default: "permission").
+ *
+ * 2. Worker badge integration: Shows "@{name}" in dimColor when a swarm
+ *    worker is requesting the permission. Uses WorkerBadgeProps.
+ *
+ * 3. Subtitle support: Optional ReactNode subtitle for additional context.
+ *
+ * 4. Theme-aware: color is keyed to Theme for type-safe color references.
+ *
+ * 5. Used as the header for all permission request dialogs.
+ *
+ * See: analysis/components/permissions/ — dialog header
+ */
 type Props = {
   title: string;
   subtitle?: React.ReactNode;

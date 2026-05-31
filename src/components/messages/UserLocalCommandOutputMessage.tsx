@@ -6,6 +6,33 @@ import { Box, Text } from '../../ink.js';
 import { extractTag } from '../../utils/messages.js';
 import { Markdown } from '../Markdown.js';
 import { MessageResponse } from '../MessageResponse.js';
+
+/* ARCHITECTURE NOTE: UserLocalCommandOutputMessage — local command output (UserLocalCommandOutputMessage.tsx:1-167)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders stdout/stderr from local (non-bash) command execution.
+ *
+ * Key patterns:
+ *
+ * 1. Dual output extraction: extractTag for "local-command-stdout" and
+ *    "local-command-stderr" — separates standard output from errors.
+ *
+ * 2. Empty output handling: Returns NO_CONTENT_MESSAGE when both stdout
+ *    and stderr are empty/absent.
+ *
+ * 3. Symbol.for("react.early_return_sentinel"): Used with labeled break
+ *    (bb0) for early return within React compiler memoization — allows
+ *    the compiler to cache the null/empty case.
+ *
+ * 4. Markdown rendering: Output rendered via Markdown for formatting
+ *    (code blocks, lists, etc.).
+ *
+ * 5. Diamond figures: DIAMOND_FILLED/DIAMOND_OPEN as visual indicators
+ *    for command execution status.
+ *
+ * 6. MessageResponse wrapper: Appears connected to the message above.
+ *
+ * See: analysis/components/messages/ — local command output display
+ */
 type Props = {
   content: string;
 };

@@ -3,6 +3,26 @@ import * as React from 'react';
 import { BLACK_CIRCLE } from '../../constants/figures.js';
 import { Box, Text } from '../../ink.js';
 import { toInkColor } from '../../utils/ink.js';
+
+/* ARCHITECTURE NOTE: WorkerBadge — swarm worker identifier (WorkerBadge.tsx:1-49)
+ * ────────────────────────────────────────────────────────────────────────────
+ * Renders a colored badge showing a swarm worker's name.
+ *
+ * Key patterns:
+ *
+ * 1. Color conversion: toInkColor converts hex/RGB color string to Ink
+ *    color format for terminal rendering.
+ *
+ * 2. Display format: BLACK_CIRCLE + "@{name}" in bold with the worker's
+ *    assigned color. Compact inline display.
+ *
+ * 3. Used in permission prompts to identify which swarm worker is
+ *    requesting the permission.
+ *
+ * 4. Props: name (string), color (string — any CSS color).
+ *
+ * See: analysis/components/permissions/ — worker badge
+ */
 export type WorkerBadgeProps = {
   name: string;
   color: string;

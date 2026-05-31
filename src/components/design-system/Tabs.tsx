@@ -8,6 +8,43 @@ import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybindings } from '../../keybindings/useKeybinding.js';
 import type { Theme } from '../../utils/theme.js';
+
+/* ARCHITECTURE NOTE: Tabs — tabbed navigation container (Tabs.tsx:1-340)
+ * ─────────────────────────────────────────────────────────────────────
+ * Tabbed interface with keyboard navigation, scrollable content, and
+ * controlled/uncontrolled modes. Used across MCP settings, permissions,
+ * agent management, and other multi-panel dialogs.
+ *
+ * Key patterns:
+ *
+ * 1. TabsContext: Provides selectedTab, width, headerFocused state, and
+ *    focus/blur controls. Enables Tab and TabPanel components to coordinate.
+ *
+ * 2. Keyboard navigation: useKeybindings for arrow keys (left/right for tabs,
+ *    up/down for content). initialHeaderFocused controls whether header or
+ *    content gets initial focus.
+ *
+ * 3. Controlled mode: selectedTab + onTabChange props allow external state
+ *    management. Uncontrolled mode uses internal useState with defaultTab.
+ *
+ * 4. Fixed height: contentHeight prop ensures all tabs render within the
+ *    same height (overflow hidden). Prevents layout shifts when switching
+ *    between tabs with different content lengths.
+ *
+ * 5. Modal integration: useIsInsideModal() + useModalScrollRef() for modal
+ *    context awareness. ScrollBox for tall content that exceeds viewport.
+ *
+ * 6. Banner support: Optional banner rendered below tab header for warnings
+ *    or contextual information.
+ *
+ * 7. Nav from content: navFromContent prop allows Tab/←/→ to switch tabs
+ *    from focused content. Opt-in since some content binds these keys.
+ *
+ * 8. Width calculation: stringWidth for tab label measurement. useFullWidth
+ *    prop for full-terminal-width tabs vs. compact mode.
+ *
+ * See: analysis/components/design-system/ — tabbed navigation
+ */
 type TabsProps = {
   children: Array<React.ReactElement<TabProps>>;
   title?: string;

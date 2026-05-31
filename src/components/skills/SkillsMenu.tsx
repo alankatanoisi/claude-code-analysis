@@ -1,3 +1,27 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: SkillsMenu.tsx — Skill Asset Catalog by Source
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// getSourceTitle(source)
+// ──────────────────────
+// Converts plugin, mcp, and various setting sources into user-facing text
+// (e.g., "Plugin skills", "MCP skills", "User skills").
+//
+// getSourceSubtitle(source, skills)
+// ─────────────────────────────────
+// For MCP skills, extracts unique server names. For file-based skills, shows
+// filesystem paths. If old commands_DEPRECATED form exists, also shows
+// commands path. Provides context about where skills come from.
+//
+// SkillsMenu(...)
+// ───────────────
+// Skills UI treats skills as an ASSET CATALOG aggregated by source, not just
+// a flat command list. Filters skill commands from commands array, groups by
+// policy/user/project/local/flag/plugin/mcp, sorts within each group, and
+// renders group by group showing total skill count per source.
+// ============================================================================
+
 import { c as _c } from "react/compiler-runtime";
 import capitalize from 'lodash-es/capitalize.js';
 import * as React from 'react';
@@ -11,6 +35,35 @@ import { getSettingSourceName, type SettingSource } from '../../utils/settings/c
 import { plural } from '../../utils/stringUtils.js';
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js';
 import { Dialog } from '../design-system/Dialog.js';
+
+/* ARCHITECTURE NOTE: SkillsMenu — skill asset catalog (SkillsMenu.tsx:1-261)
+ * ─────────────────────────────────────────────────────────────────────────
+ * Skills UI — treats skills as an ASSET CATALOG aggregated by source.
+ *
+ * Key patterns:
+ *
+ * 1. Source grouping: Filters skill commands from commands array, groups
+ *    by policy/user/project/local/flag/plugin/mcp source. Sorts within
+ *    each group alphabetically.
+ *
+ * 2. Source titles/subtitles: getSourceTitle converts source types to
+ *    user-facing text ("Plugin skills", "MCP skills", "User skills").
+ *    getSourceSubtitle extracts server names (MCP) or filesystem paths
+ *    (file-based skills).
+ *
+ * 3. Token estimation: estimateSkillFrontmatterTokens for skill size
+ *    display. formatTokens for human-readable token count.
+ *
+ * 4. Skill commands: Skills are PromptCommands with CommandBase properties.
+ *    getCommandName for command identification.
+ *
+ * 5. Configurable shortcuts: ConfigurableShortcutHint for keyboard
+ *    shortcut display per skill.
+ *
+ * 6. Dialog wrapper: Design system Dialog for the skills catalog display.
+ *
+ * See: analysis/components/skills/ — skill catalog
+ */
 
 // Skills are always PromptCommands with CommandBase properties
 type SkillCommand = CommandBase & PromptCommand;

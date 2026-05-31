@@ -5,6 +5,30 @@ import { FallbackPermissionRequest } from '../FallbackPermissionRequest.js';
 import { FilePermissionDialog } from '../FilePermissionDialog/FilePermissionDialog.js';
 import type { ToolInput } from '../FilePermissionDialog/useFilePermissionDialog.js';
 import type { PermissionRequestProps, ToolUseConfirm } from '../PermissionRequest.js';
+
+/* ARCHITECTURE NOTE: FilesystemPermissionRequest — shared file permission UI (FilesystemPermissionRequest.tsx:1-115)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Handles permission requests for file-reading tools (Glob, Grep, FileRead).
+ * Shared between multiple tool types that operate on the filesystem.
+ *
+ * Key patterns:
+ *
+ * 1. Path extraction: pathFromToolUse() calls tool.getPath(input) to extract
+ *    the target path. Falls back to FallbackPermissionRequest if path extraction
+ *    fails.
+ *
+ * 2. Read vs. edit distinction: tool.isReadOnly(input) determines whether to
+ *    show "Read file" or "Edit file" in the title. This affects user perception
+ *    of risk.
+ *
+ * 3. FilePermissionDialog: Shared dialog for file permission requests. Shows
+ *    file path, content preview, and approve/reject/always-allow options.
+ *
+ * 4. User-facing name: tool.userFacingName(input) provides the display name
+ *    for the tool (may differ from internal name for branding).
+ *
+ * See: analysis/components/permissions/ — filesystem permission handling
+ */
 function pathFromToolUse(toolUseConfirm: ToolUseConfirm): string | null {
   const tool = toolUseConfirm.tool;
   if ('getPath' in tool && typeof tool.getPath === 'function') {

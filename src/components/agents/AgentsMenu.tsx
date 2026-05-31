@@ -1,3 +1,45 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: AgentsMenu.tsx — Agent Control Plane State Machine
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// AgentsMenu(...)
+// ───────────────
+// "The master state machine of the agent control plane." Reads agentDefinitions,
+// mcpTools, toolPermissionContext from AppState. Calls useMergedTools to form
+// the complete tool set. Splits allAgents by source (built-in, userSettings,
+// projectSettings, policySettings, localSettings, flagSettings, plugin). Uses
+// resolveAgentOverrides to get final effective agents. Handles mode switching
+// for creation, deletion, details, editing, wizard flows.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: AgentsMenu — agent lifecycle management (AgentsMenu.tsx:1-815)
+ * ────────────────────────────────────────────────────────────────────────────────
+ * The master state machine for agent (custom Claude) management. Handles the
+ * full CRUD lifecycle through a mode-based state machine.
+ *
+ * Key patterns:
+ *
+ * 1. Multi-source agent aggregation: Agents come from 7 sources (built-in,
+ *    userSettings, projectSettings, policySettings, localSettings, flagSettings,
+ *    plugin). resolveAgentOverrides merges these into effective agent definitions.
+ *
+ * 2. Mode state machine: list-agents → create → edit → delete → details.
+ *    Each mode renders a different sub-component (AgentsList, CreateAgentWizard,
+ *    AgentEditor, AgentDetail, AgentNavigationFooter).
+ *
+ * 3. Tool merging: useMergedTools combines base tools + MCP tools + permission
+ *    context so agents can be configured with the full tool set available.
+ *
+ * 4. Change tracking: Changes array tracks pending modifications before they
+ *    are committed to agent configuration files.
+ *
+ * 5. Ctrl+C exit: useExitOnCtrlCDWithKeybindings provides consistent exit
+ *    behavior across all agent management screens.
+ *
+ * See: analysis/components/03-platform-components.md §3
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import chalk from 'chalk';
 import * as React from 'react';

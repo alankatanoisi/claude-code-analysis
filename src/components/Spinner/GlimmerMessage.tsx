@@ -6,6 +6,33 @@ import { getGraphemeSegmenter } from '../../utils/intl.js';
 import { getTheme, type Theme } from '../../utils/theme.js';
 import type { SpinnerMode } from './types.js';
 import { interpolateColor, parseRGB, toRGBColor } from './utils.js';
+
+/* ARCHITECTURE NOTE: GlimmerMessage — shimmer-animated text message (GlimmerMessage.tsx:1-328)
+ * ───────────────────────────────────────────────────────────────────────────────────────
+ * Renders a message with per-character shimmer/flash animation effects.
+ *
+ * Key patterns:
+ *
+ * 1. Grapheme segmentation: getGraphemeSegmenter for proper Unicode character
+ *    handling (emoji, combining marks, etc.). stringWidth for terminal width.
+ *
+ * 2. Spinner modes: Different animation behaviors for each SpinnerMode
+ *    (thinking, loading, error, etc.).
+ *
+ * 3. Per-character effects: ShimmerChar for shimmer, FlashingChar for flash
+ *    opacity interpolation. glimmerIndex tracks the current highlight position.
+ *
+ * 4. Stalled animation: stalledIntensity increases over time when no progress
+ *    is detected — shifts color toward ERROR_RED.
+ *
+ * 5. Color interpolation: interpolateColor between messageColor and shimmerColor
+ *    based on flashOpacity. Theme-aware color resolution.
+ *
+ * 6. Early return sentinel: Symbol.for("react.early_return_sentinel") for
+ *    React compiler memoization when theme colors can't be parsed.
+ *
+ * See: analysis/components/Spinner/ — glimmer message
+ */
 type Props = {
   message: string;
   mode: SpinnerMode;

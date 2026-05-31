@@ -3,6 +3,31 @@ import * as React from 'react';
 import { Ansi, Box, Text, useAnimationFrame } from '../../ink.js';
 import { segmentTextByHighlights, type TextHighlight } from '../../utils/textHighlighting.js';
 import { ShimmerChar } from '../Spinner/ShimmerChar.js';
+
+/* ARCHITECTURE NOTE: ShimmeredInput/HighlightedInput — animated text display (ShimmeredInput.tsx:1-143)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders text with highlight annotations and optional shimmer animation.
+ *
+ * Key patterns:
+ *
+ * 1. Highlight segmentation: segmentTextByHighlights splits text into
+ *    segments based on TextHighlight[] array. Each segment has a start
+ *    position and optional highlight metadata.
+ *
+ * 2. Line-aware rendering: Splits text by newlines and tracks position
+ *    for each line part. Maintains line structure for terminal display.
+ *
+ * 3. ShimmerChar: Per-character shimmer animation component for
+ *    animated text effects (used for streaming/thinking display).
+ *
+ * 4. Ansi rendering: Uses Ansi component for color/styled text output
+ *    in the terminal.
+ *
+ * 5. Used for: Typeahead display, search results, and other text that
+ *    needs visual highlighting within the prompt input area.
+ *
+ * See: analysis/components/PromptInput/ — highlighted text display
+ */
 type Props = {
   text: string;
   highlights: TextHighlight[];

@@ -10,6 +10,37 @@ import { logError } from '../../utils/log.js';
 import { countCharInString } from '../../utils/stringUtils.js';
 import { MessageActionsSelectedContext } from '../messageActions.js';
 import { HighlightedThinkingText } from './HighlightedThinkingText.js';
+
+/* ARCHITECTURE NOTE: UserPromptMessage — primary user prompt renderer (UserPromptMessage.tsx:1-80)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * Renders the main user prompt text with the ❯ prefix. This is the fallback
+ * renderer when no special XML tags are detected in user text.
+ *
+ * Key patterns:
+ *
+ * 1. Hard cap on displayed text: MAX_DISPLAY_CHARS=10,000 prevents keystroke
+ *    latency when users pipe large files via stdin (e.g., `cat 11k-line-file |
+ *    claude`). The fullscreen Ink wrapper must process every text node on each
+ *    frame — large text causes 500ms+ lag.
+ *
+ * 2. Head+tail truncation: TRUNCATE_HEAD_CHARS=2,500 + TRUNCATE_TAIL_CHARS=2,500
+ *    with "…N characters skipped…" in between. Head+tail preserves the user's
+ *    actual question at the end (common pattern: `{ cat file; echo prompt; } | claude`).
+ *
+ * 3. Thinking text highlighting: HighlightedThinkingText detects and styles
+ *    thinking-related content within the prompt.
+ *
+ * 4. Selection-aware styling: MessageActionsSelectedContext provides background
+ *    color for selected message highlighting.
+ *
+ * 5. Feature-gated enhancements: Kairos (getKairosActive) and user message
+ *    opt-in (getUserMsgOptIn) gates for enhanced prompt display features.
+ *
+ * 6. Non-fullscreen optimization: Uses <Static> (print-and-forget) in non-
+ *    fullscreen mode to avoid re-rendering mounted text on every frame.
+ *
+ * See: analysis/components/messages/ — user prompt display
+ */
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;

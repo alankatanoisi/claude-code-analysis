@@ -2,6 +2,28 @@ import * as React from 'react';
 import { FLAG_ICON } from '../../constants/figures.js';
 import { Box, Text } from '../../ink.js';
 
+/* ARCHITECTURE NOTE: IssueFlagBanner — issue reporting banner (IssueFlagBanner.tsx:1-12)
+ * ───────────────────────────────────────────────────────────────────────────────────
+ * ANT-ONLY: Banner prompting users to report issues via /issue.
+ *
+ * Key patterns:
+ *
+ * 1. Build-time elimination: Returns null in non-ANT builds. The source
+ *    shows `if ("external" !== 'ant') return null` — DCE removes the
+ *    entire banner for external builds.
+ *
+ * 2. Friction detection: Appears when friction is detected in the
+ *    conversation (e.g., repeated errors, user frustration signals).
+ *
+ * 3. Display: Warning-colored flag icon + "Something off with Claude?
+ *    /issue to report it" text.
+ *
+ * 4. Minimal component: 12 lines, no props, no state. Pure static display
+ *    with build-time gating.
+ *
+ * See: analysis/components/PromptInput/ — issue reporting (ANT-only)
+ */
+
 /**
  * ANT-ONLY: Banner shown in the transcript that prompts users to report
  * issues via /issue. Appears when friction is detected in the conversation.

@@ -7,6 +7,37 @@ import { getRunningTeammatesSorted } from '../../tasks/InProcessTeammateTask/InP
 import { formatNumber } from '../../utils/format.js';
 import { TeammateSpinnerLine } from './TeammateSpinnerLine.js';
 import { TEAMMATE_SELECT_HINT } from './teammateSelectHint.js';
+
+/* ARCHITECTURE NOTE: TeammateSpinnerTree — swarm agent status tree (TeammateSpinnerTree.tsx:1-272)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Renders the tree of running teammate agents with their status, progress,
+ * and selection indicators.
+ *
+ * Key patterns:
+ *
+ * 1. Teammate sorting: getRunningTeammatesSorted for ordered display of
+ *    active agents.
+ *
+ * 2. State subscriptions: useAppState for tasks, viewingAgentTaskId,
+ *    showTeammateMessagePreview — slice subscriptions prevent full-tree
+ *    re-renders.
+ *
+ * 3. Leader display: leaderVerb (active action), leaderTokenCount,
+ *    leaderIdleText (idle status like "✻ Idle for 3s").
+ *
+ * 4. Selection mode: selectedIndex/isInSelectionMode for agent selection
+ *    UI. TEAMMATE_SELECT_HINT for selection instructions.
+ *
+ * 5. TeammateSpinnerLine: Per-agent status line with spinner, name,
+ *    action, and progress.
+ *
+ * 6. All-idle detection: allIdle prop for collapsing the tree when
+ *    all teammates are idle.
+ *
+ * 7. Token formatting: formatNumber for token count display.
+ *
+ * See: analysis/components/Spinner/ — teammate spinner tree
+ */
 type Props = {
   selectedIndex?: number;
   isInSelectionMode?: boolean;

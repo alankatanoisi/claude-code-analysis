@@ -1,3 +1,77 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: BashPermissionRequest.tsx — Bash Approval Policy Editor
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// ClassifierCheckingSubtitle()
+// ─────────────────────────────
+// Performance extraction: isolates the 20fps shimmer clock from the heavy
+// approval dialog. Before this extraction, useShimmerAnimation lived in the
+// 535-line Inner body, causing the entire PermissionDialog + Select + children
+// subtree to re-render at high frequency during classifier checking (~1-3s).
+// Only the subtitle itself re-renders at 20fps — the parent dialog is stable.
+//
+// BashPermissionRequest(props)
+// ─────────────────────────────
+// Entry function that performs structural dispatch based on command shape.
+// First parses command/description via BashTool.inputSchema.parse, then calls
+// parseSedEditCommand. If sed edit, directly switches to SedEditPermissionRequest.
+// Otherwise enters BashPermissionRequestInner. Bash approval is NOT a single path.
+//
+// BashPermissionRequestInner(...)
+// ───────────────────────────────
+// "A microcosm of the permission system — the approval UI is not a yes/no
+// dialog but a POLICY EDITOR that dynamically generates rules." Steps:
+// 1. Manage explainer panel and feedback mode
+// 2. Asynchronously generate classifier description
+// 3. Generate editable prefixes via extractRules, getSimpleCommandPrefix, etc.
+// 4. Generate selectable approval items via bashToolUseOptions
+// 5. Execute approve/reject via onSelect: yes, yes-apply-suggestions,
+//    yes-prefix-edited, yes-classifier-reviewed, no
+// 6. On approve: calls toolUseConfirm.onAllow with optional PermissionUpdate[]
+// 7. On reject: calls handleReject
+// 8. Records analytics data (logEvent, logUnaryPermissionEvent)
+// ============================================================================
+
+/* ARCHITECTURE NOTE: BashPermissionRequest — command approval policy editor (BashPermissionRequest.tsx:1-517)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * The most complex permission request. Not a simple yes/no dialog but a
+ * dynamic policy editor that generates editable command prefixes, classifier
+ * descriptions, and rule suggestions.
+ *
+ * Key patterns:
+ *
+ * 1. Command parsing: BashTool.inputSchema.parse validates command/description.
+ *    parseSedEditCommand detects sed-style edits and redirects to
+ *    SedEditPermissionRequest.
+ *
+ * 2. Prefix generation: getSimpleCommandPrefix, getFirstWordPrefix,
+ *    getCompoundCommandPrefixesStatic extract editable prefixes from the
+ *    command for user modification before approval.
+ *
+ * 3. Classifier integration: generateGenericDescription + isClassifierPermissionsEnabled
+ *    provide AI-generated command descriptions. Classifier checking shows a
+ *    shimmer animation while the classifier processes.
+ *
+ * 4. Destructive command warnings: getDestructiveCommandWarning() detects
+ *    dangerous commands (rm -rf, drop table, etc.) and shows explicit warnings.
+ *
+ * 5. Sandbox support: shouldUseSandbox() + SandboxManager for sandboxed
+ *    command execution.
+ *
+ * 6. Analytics: logEvent + logUnaryPermissionEvent track approval decisions,
+ *    classifier accuracy, and user editing patterns.
+ *
+ * 7. Select component: CustomSelect for approval option selection with
+ *    keyboard navigation.
+ *
+ * 8. Shimmer animation: ShimmerChar + useShimmerAnimation for the "checking..."
+ *    indicator. Isolated in ClassifierCheckingSubtitle to prevent re-rendering
+ *    the entire dialog at 20fps.
+ *
+ * See: analysis/components/permissions/ — bash command approval
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import figures from 'figures';

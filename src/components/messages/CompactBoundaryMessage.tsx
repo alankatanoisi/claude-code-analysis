@@ -2,6 +2,28 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js';
+
+/* ARCHITECTURE NOTE: CompactBoundaryMessage — compaction marker (CompactBoundaryMessage.tsx:1-18)
+ * ──────────────────────────────────────────────────────────────────────────────────────────
+ * Renders a subtle divider indicating where conversation was compacted.
+ *
+ * Key patterns:
+ *
+ * 1. Shortcut display: useShortcutDisplay("app:toggleTranscript", "Global", "ctrl+o")
+ *    dynamically shows the current keybinding for viewing compacted history.
+ *    Adapts to user's actual keymap configuration.
+ *
+ * 2. Visual marker: "✻ Conversation compacted (ctrl+o for history)" rendered
+ *    in dimColor with marginY=1 for spacing.
+ *
+ * 3. Compaction context: Inserted by Messages.tsx during context window
+ *    management when older messages are compacted into a summary. The ✻
+ *    symbol serves as a visual break point in the transcript.
+ *
+ * 4. No props: Stateless component — shortcut is the only dynamic value.
+ *
+ * See: analysis/components/messages/ — compaction UI
+ */
 export function CompactBoundaryMessage() {
   const $ = _c(2);
   const historyShortcut = useShortcutDisplay("app:toggleTranscript", "Global", "ctrl+o");

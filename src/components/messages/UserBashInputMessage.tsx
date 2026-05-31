@@ -3,6 +3,27 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import { extractTag } from '../../utils/messages.js';
+
+/* ARCHITECTURE NOTE: UserBashInputMessage — bash input echo (UserBashInputMessage.tsx:1-58)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * Renders bash input that was echoed back from the terminal (command echo).
+ *
+ * Key patterns:
+ *
+ * 1. XML tag extraction: extractTag(text, "bash-input") parses the echoed
+ *    command from the XML-wrapped text block.
+ *
+ * 2. Null guard: Returns null if no bash-input tag found — this component
+ *    only handles explicit bash input echoes.
+ *
+ * 3. Display: Shows the echoed command in a styled box to indicate it was
+ *    executed in the terminal (vs. the user's typed prompt).
+ *
+ * 4. Used when the terminal echoes back commands before showing output —
+ *    provides visual continuity between user input and terminal execution.
+ *
+ * See: analysis/components/messages/ — bash input echo
+ */
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;

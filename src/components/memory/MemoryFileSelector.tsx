@@ -1,4 +1,58 @@
-import { c as _c } from "react/compiler-runtime";
+// ============================================================================
+// CHAPTER 6 ANALYSIS: MemoryFileSelector.tsx — Unified Memory Resource Selector
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// MemoryFileSelector(...)
+// ───────────────────────
+// Unifies memory entry points scattered across the filesystem into a single
+// "memory resource selector." Reads memory file tree via use(getMemoryFiles()).
+// Manually fills in user/project root CLAUDE.md paths even if files don't
+// exist yet. Constructs depth from parent references for nested label display.
+// Decides whether project memory description is "Checked in at ./CLAUDE.md" or
+// "Saved in ./CLAUDE.md" based on git repo status. If auto-memory is enabled,
+// adds auto-memory folder, team-memory folder, and each agent memory folder.
+// Retains last selection via lastSelectedPath module-level variable. Also
+// maintains autoMemoryOn, autoDreamOn, lastDreamAt state.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: MemoryFileSelector — unified memory resource selector (MemoryFileSelector.tsx:1-456)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Unifies memory entry points scattered across the filesystem into a single
+ * "memory resource selector."
+ *
+ * Key patterns:
+ *
+ * 1. Memory file tree: use(getMemoryFiles()) reads the memory file tree
+ *    asynchronously. Returns MemoryFileInfo[] with path, content, and metadata.
+ *
+ * 2. Manual root filling: Manually fills in user/project root CLAUDE.md paths
+ *    even if files don't exist yet — ensures the selector always shows the
+ *    expected memory locations.
+ *
+ * 3. Depth construction: Constructs depth from parent references for nested
+ *    label display (e.g., "Project > src > CLAUDE.md").
+ *
+ * 4. Git-aware descriptions: Decides whether project memory description is
+ *    "Checked in at ./CLAUDE.md" or "Saved in ./CLAUDE.md" based on
+ *    projectIsInGitRepo() status.
+ *
+ * 5. Auto-memory integration: If auto-memory is enabled (isAutoMemoryEnabled()),
+ *    adds auto-memory folder, team-memory folder, and each agent memory folder
+ *    to the selector tree.
+ *
+ * 6. State persistence: Retains last selection via lastSelectedPath module-level
+ *    variable. Maintains autoMemoryOn, autoDreamOn, lastDreamAt state for
+ *    toggle persistence.
+ *
+ * 7. Feature-gated team memory: feature('TEAMMEM') gates team memory path
+ *    resolution via teamMemPaths.js.
+ *
+ * 8. Settings integration: updateSettingsForSource() for persisting memory
+ *    configuration changes back to settings.
+ *
+ * See: analysis/components/06-function-level-platform-walkthrough.md §7.1
+ */
 import { feature } from 'bun:bundle';
 import chalk from 'chalk';
 import { mkdir } from 'fs/promises';

@@ -2,6 +2,25 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import { Markdown } from '../Markdown.js';
+
+/* ARCHITECTURE NOTE: UserPlanMessage — plan mode display (UserPlanMessage.tsx:1-42)
+ * ────────────────────────────────────────────────────────────────────────────────
+ * Renders a user-submitted plan as a bordered box with "planMode" color.
+ *
+ * Key patterns:
+ *
+ * 1. Plan mode styling: borderColor="planMode" (amber/yellow) visually
+ *    distinguishes plan content from regular conversation.
+ *
+ * 2. Header: "Plan to implement" label in bold planMode color.
+ *
+ * 3. Markdown rendering: planContent rendered via Markdown component for
+ *    formatting (lists, code blocks, etc.).
+ *
+ * 4. addMargin: Controls top margin when plan starts a new user turn.
+ *
+ * See: analysis/components/messages/ — plan mode UI
+ */
 type Props = {
   addMargin: boolean;
   planContent: string;

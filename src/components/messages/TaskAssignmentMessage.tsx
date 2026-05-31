@@ -2,6 +2,30 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import { isTaskAssignment, type TaskAssignmentMessage } from '../../utils/teammateMailbox.js';
+
+/* ARCHITECTURE NOTE: TaskAssignmentMessage — task assignment display (TaskAssignmentMessage.tsx:1-76)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders task assignment messages in multi-agent (swarm) mode.
+ *
+ * Key patterns:
+ *
+ * 1. Cyan border: color="cyan_FOR_SUBAGENTS_ONLY" visually marks task
+ *    assignments as team-related operations.
+ *
+ * 2. Task metadata: Shows task ID, assigner, subject, and optional
+ *    description in a structured bordered box.
+ *
+ * 3. tryRenderTaskAssignmentMessage: Parses raw content using
+ *    isTaskAssignment type guard from teammateMailbox.js.
+ *
+ * 4. getTaskAssignmentSummary: Returns brief text summary for queue
+ *    display — used in inbox and notification contexts.
+ *
+ * 5. Teammate mailbox protocol: Uses structured message types for
+ *    inter-agent task delegation.
+ *
+ * See: analysis/components/messages/ — swarm task assignment UI
+ */
 type Props = {
   assignment: TaskAssignmentMessage;
 };

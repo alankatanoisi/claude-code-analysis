@@ -3,6 +3,30 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import * as React from 'react';
 import { REFRESH_ARROW } from '../../constants/figures.js';
 import { Box, Text } from '../../ink.js';
+
+/* ARCHITECTURE NOTE: UserResourceUpdateMessage — MCP resource/polling updates (UserResourceUpdateMessage.tsx:1-121)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders MCP resource updates and polling notifications.
+ *
+ * Key patterns:
+ *
+ * 1. Two update types:
+ *    - resource: <mcp-resource-update server="..." uri="..."> with optional
+ *      <reason> sub-element.
+ *    - polling: <mcp-polling-update server="..." tool="..."> with optional
+ *      <reason> sub-element.
+ *
+ * 2. XML parsing: parseUpdates() uses regex to extract multiple updates
+ *    from a single text block. Handles both resource and polling formats.
+ *
+ * 3. Display: REFRESH_ARROW figure constant with server name and target
+ *    (URI or tool name). Optional reason shown in dimColor.
+ *
+ * 4. Used when MCP servers push resource changes or polling results into
+ *    the conversation (e.g., file watch, periodic data fetch).
+ *
+ * See: analysis/components/messages/ — MCP resource update display
+ */
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;

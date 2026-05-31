@@ -7,6 +7,32 @@ import type { PromptInputMode } from 'src/types/textInputTypes.js';
 import { getTeammateColor } from 'src/utils/teammate.js';
 import type { Theme } from 'src/utils/theme.js';
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
+
+/* ARCHITECTURE NOTE: PromptInputModeIndicator — mode/agent indicator (PromptInputModeIndicator.tsx:1-93)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────
+ * Shows the current input mode (normal, plan, etc.) and active agent name.
+ *
+ * Key patterns:
+ *
+ * 1. Mode display: Different characters/icons for each PromptInputMode
+ *    (e.g., ❯ for normal, different chars for plan mode, etc.).
+ *
+ * 2. Agent color integration: AGENT_COLOR_TO_THEME_COLOR maps agent
+ *    colors to theme colors. getTeammateThemeColor resolves the current
+ *    teammate's color for display.
+ *
+ * 3. Loading state: isLoading changes the prompt character animation
+ *    (e.g., spinning indicator while model is thinking).
+ *
+ * 4. Swarm awareness: isAgentSwarmsEnabled gates teammate color resolution.
+ *    viewingAgentName/viewingAgentColor props for showing which agent
+ *    the user is currently viewing.
+ *
+ * 5. Dead code elimination: themeColor parameter named to avoid "teammate"
+ *    string in external builds (compile-time trimming).
+ *
+ * See: analysis/components/PromptInput/ — mode indicator
+ */
 type Props = {
   mode: PromptInputMode;
   isLoading: boolean;

@@ -12,6 +12,34 @@ import { InterruptedByUser } from '../../InterruptedByUser.js';
 import { MessageResponse } from '../../MessageResponse.js';
 import { RejectedPlanMessage } from './RejectedPlanMessage.js';
 import { RejectedToolUseMessage } from './RejectedToolUseMessage.js';
+
+/* ARCHITECTURE NOTE: UserToolErrorMessage — tool error renderer (UserToolErrorMessage.tsx:1-103)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Renders tool error results with semantic sub-type detection.
+ *
+ * Key patterns:
+ *
+ * 1. Error sub-type detection: Checks for INTERRUPT_MESSAGE_FOR_TOOL_USE
+ *    (user interrupted), PLAN_REJECTION_PREFIX (plan rejected),
+ *    REJECT_MESSAGE_WITH_REASON_PREFIX (rejected with reason), and
+ *    isClassifierDenial (classifier denied auto-approval).
+ *
+ * 2. Sub-type routing:
+ *    - Interrupt → InterruptedByUser component
+ *    - Plan rejection → RejectedPlanMessage (shows rejected plan content)
+ *    - Tool rejection → RejectedToolUseMessage
+ *    - Other errors → FallbackToolUseErrorMessage (generic error display)
+ *
+ * 3. Progress messages: filterToolProgressMessages for error context.
+ *
+ * 4. Feature-gated teammate error: feature('TEAMMEM') gates teammate
+ *    tool error display.
+ *
+ * 5. Tool may be undefined: When resuming old conversations that use tools
+ *    no longer available, tool is undefined — graceful fallback.
+ *
+ * See: analysis/components/messages/ — tool error display
+ */
 type Props = {
   progressMessagesForMessage: ProgressMessage[];
   tool?: Tool; // undefined when resuming an old conversation that uses an old tool

@@ -12,6 +12,38 @@ import { type AgentDefinition, isBuiltInAgent } from '../../tools/AgentTool/load
 import { getAgentModelDisplay } from '../../utils/model/agent.js';
 import { Markdown } from '../Markdown.js';
 import { getActualRelativeAgentFilePath } from './agentFileUtils.js';
+
+/* ARCHITECTURE NOTE: AgentDetail — agent configuration inspector (AgentDetail.tsx:1-220)
+ * ───────────────────────────────────────────────────────────────────────────────────
+ * Expands an agent definition object into a user-reviewable configuration unit.
+ *
+ * Key patterns:
+ *
+ * 1. Tool resolution: resolveAgentTools(agent, tools, false) computes
+ *    valid/invalid tools for the agent, showing which tools are available
+ *    and which are missing or misconfigured.
+ *
+ * 2. File source display: getActualRelativeAgentFilePath(agent) determines
+ *    where the agent definition came from (user settings, project settings,
+ *    policy, plugin, etc.) for transparency.
+ *
+ * 3. Color assignment: getAgentColor(agent.agentType) assigns a color for
+ *    visual differentiation in the agent list.
+ *
+ * 4. Model display: getAgentModelDisplay(agent.model) formats the model
+ *    name for display (e.g., "Sonnet 4", "Opus 4").
+ *
+ * 5. Memory scope: getMemoryScopeDisplay(agent.memory) shows memory
+ *    configuration (none, session, project, user).
+ *
+ * 6. System prompt rendering: For non-built-in agents, renders
+ *    agent.getSystemPrompt() via Markdown for review.
+ *
+ * 7. Built-in detection: isBuiltInAgent(agent) gates editing capabilities
+ *    — built-in agents are read-only.
+ *
+ * See: analysis/components/06-function-level-platform-walkthrough.md §4.2
+ */
 type Props = {
   agent: AgentDefinition;
   tools: Tools;

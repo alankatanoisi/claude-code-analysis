@@ -14,6 +14,39 @@ import { SpinnerGlyph } from './SpinnerGlyph.js';
 import type { SpinnerMode } from './types.js';
 import { useStalledAnimation } from './useStalledAnimation.js';
 import { interpolateColor, toRGBColor } from './utils.js';
+
+/* ARCHITECTURE NOTE: SpinnerAnimationRow — thinking status bar (SpinnerAnimationRow.tsx:1-265)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * The main thinking/loading status row shown below the prompt input.
+ * Combines spinner, thinking text, token count, and duration.
+ *
+ * Key patterns:
+ *
+ * 1. Thinking shimmer: Inlined from former ThinkingShimmerText component.
+ *    THINKING_INACTIVE/THINKING_INACTIVE_SHIMMER colors with 2s glow period.
+ *    THINKING_DELAY_MS=3000 before shimmer starts.
+ *
+ * 2. Token display: SHOW_TOKENS_AFTER_MS=30_000 — token count only shown
+ *    after 30 seconds of processing. formatNumber for display.
+ *
+ * 3. Duration formatting: formatDuration for elapsed time display.
+ *
+ * 4. Stall detection: useStalledAnimation hook detects when animation
+ *    appears stalled and increases intensity for visual warning.
+ *
+ * 5. Frame animation: useAnimationFrame(50) — 50ms clock for all animation
+ *    timing. Shared clock eliminates redundant subscribers.
+ *
+ * 6. Separator: SEP_WIDTH = stringWidth(' · ') for consistent spacing.
+ *    THINKING_BARE_WIDTH for width calculations.
+ *
+ * 7. Teammate task state: InProcessTeammateTaskState for swarm mode display.
+ *    toInkColor for teammate color rendering.
+ *
+ * 8. Byline: Design system Byline component for attribution text.
+ *
+ * See: analysis/components/Spinner/ — animation row
+ */
 const SEP_WIDTH = stringWidth(' · ');
 const THINKING_BARE_WIDTH = stringWidth('thinking');
 const SHOW_TOKENS_AFTER_MS = 30_000;

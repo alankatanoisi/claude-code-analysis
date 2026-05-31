@@ -5,6 +5,30 @@ import { CHANNEL_ARROW } from '../../constants/figures.js';
 import { CHANNEL_TAG } from '../../constants/xml.js';
 import { Box, Text } from '../../ink.js';
 import { truncateToWidth } from '../../utils/format.js';
+
+/* ARCHITECTURE NOTE: UserChannelMessage — channel message display (UserChannelMessage.tsx:1-137)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Renders messages from external channels (Slack, etc.) via MCP plugins.
+ *
+ * Key patterns:
+ *
+ * 1. XML parsing: CHANNEL_RE parses <channel> tags with source, user,
+ *    and chat_id attributes. Supports optional user attribute.
+ *
+ * 2. Plugin server name resolution: displayServerName extracts leaf name
+ *    from plugin-scoped server names (e.g., "plugin:slack-channel:slack"
+ *    → "slack"). Matches addPluginScopeToServers logic.
+ *
+ * 3. Truncation: truncateToWidth(TRUNCATE_AT=60) prevents long channel
+ *    messages from breaking terminal layout.
+ *
+ * 4. Channel arrow: CHANNEL_ARROW figure constant for visual indicator.
+ *
+ * 5. Used for MCP channel integrations where external messaging platforms
+ *    feed content into the Claude Code session.
+ *
+ * See: analysis/components/messages/ — channel message display
+ */
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;

@@ -2,6 +2,25 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { InterruptedByUser } from 'src/components/InterruptedByUser.js';
 import { MessageResponse } from 'src/components/MessageResponse.js';
+
+/* ARCHITECTURE NOTE: UserToolCanceledMessage — tool cancel display (UserToolCanceledMessage.tsx:1-16)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders a canceled tool result using InterruptedByUser component.
+ *
+ * Key patterns:
+ *
+ * 1. Delegates to InterruptedByUser: Reuses the same component as user
+ *    message interruptions for consistent cancel visual language.
+ *
+ * 2. MessageResponse wrapper: Appears connected to the message above.
+ *
+ * 3. Triggered by CANCEL_MESSAGE sentinel in tool result content.
+ *    Dispatched from UserToolResultMessage.tsx.
+ *
+ * 4. Static component: 16 lines, no props, memo-cached.
+ *
+ * See: analysis/components/messages/ — tool cancel display
+ */
 export function UserToolCanceledMessage() {
   const $ = _c(1);
   let t0;

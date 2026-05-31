@@ -3,6 +3,33 @@ import React from 'react';
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js';
 import { Box } from '../../ink.js';
 import { type OptionWithDescription, Select } from '../CustomSelect/select.js';
+
+/* ARCHITECTURE NOTE: TreeSelect — hierarchical tree selection UI (TreeSelect.tsx:1-397)
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * Generic tree selection component with expand/collapse and keyboard navigation.
+ *
+ * Key patterns:
+ *
+ * 1. Tree node structure: TreeNode<T> with id, value, label, description,
+ *    children (recursive), metadata. Supports arbitrary depth.
+ *
+ * 2. Flattening: FlattenedNode<T> tracks depth, isExpanded, hasChildren,
+ *    parentId for efficient rendering of nested structure.
+ *
+ * 3. Keyboard navigation: Arrow keys for up/down, Enter for select,
+ *    Left/Right for expand/collapse. KeyboardEvent handling.
+ *
+ * 4. Select integration: Uses CustomSelect for option display with
+ *    descriptions and dimmed text support.
+ *
+ * 5. Callbacks: onSelect (node selected), onCancel (dismissed),
+ *    onFocusedNodeChanged (accessibility/focus tracking).
+ *
+ * 6. Generic type parameter: TreeNode<T> allows any value type.
+ *    Used for file trees, permission scopes, and hierarchical settings.
+ *
+ * See: analysis/components/ui/ — tree selection
+ */
 export type TreeNode<T> = {
   id: string | number;
   value: T;

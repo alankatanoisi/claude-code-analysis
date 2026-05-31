@@ -12,9 +12,21 @@ type Props = {
   children: React.ReactNode;
 };
 
-/**
- * Top-level wrapper for interactive sessions.
- * Provides FPS metrics, stats context, and app state to the component tree.
+/* ARCHITECTURE NOTE: Root context provider wrapper (App.tsx:19-55)
+ * ─────────────────────────────────────────────────────────────────
+ * Compiled output of React's JSX nesting:
+ *   FpsMetricsProvider → StatsProvider → AppStateProvider → children
+ *
+ * The React Compiler (forget) has unrolled the JSX tree into memoized
+ * conditional blocks ($[0]..$[8]). Each layer checks its inputs before
+ * recreating the subtree — this is the compiler's equivalent of useMemo.
+ *
+ * Provider ordering matters: AppStateProvider is innermost so that all
+ * descendants (including StatsProvider/FpsMetricsProvider consumers)
+ * can call useAppState(). The onChangeAppState callback is wired at
+ * mount and fires on every state transition (used by CLI replay).
+ *
+ * See: analysis/components/01-component-architecture-overview.md §2.1
  */
 export function App(t0) {
   const $ = _c(9);

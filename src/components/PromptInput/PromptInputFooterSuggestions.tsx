@@ -1,3 +1,63 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: PromptInputFooterSuggestions.tsx — Input Suggestion Layout
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// getIcon(itemId) / isUnifiedSuggestion(itemId)
+// ──────────────────────────────────────────────
+// getIcon determines the icon based on file-, mcp-resource-, agent- prefix.
+// isUnifiedSuggestion consolidates file, mcp-resource, and agent suggestions
+// into a "unified display model." Establishes a minimal decision layer for
+// cross-source unified candidates within the input suggestion system.
+//
+// SuggestionItemRow(...)
+// ──────────────────────
+// The layout algorithm for prompt suggestions. Real complexity is not choosing
+// which suggestion, but ensuring file paths, tags, and descriptions remain
+// readable under extremely unstable terminal widths. For unified suggestions:
+// single-line layout with truncatePathMiddle for files, fixed-width for MCP,
+// original name for agents. For normal suggestions: three-segment layout with
+// main column + tag + description.
+//
+// PromptInputFooterSuggestions(...)
+// ─────────────────────────────────
+// Lightweight windowed clipping (not a full virtual list) in the high-frequency
+// refresh area of input suggestions. Calculates maxVisibleItems based on overlay
+// and terminal rows, estimates main column width, computes scroll window from
+// selectedSuggestion, and renders only the visible slice.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: PromptInputFooterSuggestions — typeahead suggestion display (PromptInputFooterSuggestions.tsx:1-322)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders the typeahead suggestion list below the prompt input. Handles
+ * multiple suggestion sources (commands, files, directories, MCP resources,
+ * agents, shell history, Slack channels) with unified display semantics.
+ *
+ * Key patterns:
+ *
+ * 1. Unified suggestion detection: itemId prefixes (file-, mcp-resource-, agent-)
+ *    identify cross-source unified candidates. These get single-line layout
+ *    with icon differentiation (+ for files, ◇ for MCP, * for agents).
+ *
+ * 2. Windowed clipping: Not a full virtual list — calculates maxVisibleItems
+ *    based on terminal rows and overlay mode (OVERLAY_MAX_ITEMS=5 in overlay,
+ *    more in fullscreen). Computes scroll window from selectedSuggestion to
+ *    keep the selected item visible.
+ *
+ * 3. Layout algorithm: Three-segment layout for normal suggestions (main column
+ *    + tag + description). truncatePathMiddle for file paths, truncateToWidth
+ *    for general text truncation. maxColumnWidth estimation from terminal width.
+ *
+ * 4. Selection highlighting: isSelected prop drives inverted rendering for the
+ *    currently selected suggestion. Tab/arrow key navigation updates
+ *    selectedSuggestion from the typeahead hook.
+ *
+ * 5. Memo optimization: SuggestionItemRow is React.memo'd to prevent re-rendering
+ *    unchanged rows when selection changes.
+ *
+ * See: analysis/components/PromptInput/ — suggestion display
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { memo, type ReactNode } from 'react';

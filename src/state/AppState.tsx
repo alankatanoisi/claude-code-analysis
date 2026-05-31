@@ -9,7 +9,59 @@ import { applySettingsChange } from '../utils/settings/applySettingsChange.js';
 import type { SettingSource } from '../utils/settings/constants.js';
 import { createStore } from './store.js';
 
-// DCE: voice context is ant-only. External builds get a passthrough.
+// ============================================================================
+// CHAPTER 5 ANALYSIS: AppStateProvider + useAppState — Root State Layer
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// AppStateProvider(...)
+// ────────────────────
+// NOT a pure container. It's a composite entry point of:
+// - State source: createStore(initialState ?? getDefaultAppState())
+// - Config change sync: useSettingsChange(onSettingsChange) syncs settings
+//   changes back to the store via applySettingsChange()
+// - Permission mode correction: If remote settings require disabling bypass
+//   permissions, it replaces toolPermissionContext with a disabled version
+//   via _temp(prev) → createDisabledBypassPermissionsContext()
+// - Provider stacking: Mounts MailboxProvider, VoiceProvider, and
+//   AppStoreContext.Provider together
+//
+// HasAppStateContext guard: Nested providers throw an error, enforcing the
+// "one store per app" invariant.
+//
+// useAppState(selector)
+// ─────────────────────
+// Gets store via useAppStore(), constructs a get() that takes new state from
+// store.getState() and executes the selector, then subscribes via
+// useSyncExternalStore(store.subscribe, get, get). Forces callers to take
+// SLICES only (never the full state tree). Combined with Object.is semantics,
+// avoids unrelated component re-rendering.
+//
+// useSetAppState() / useAppStateStore()
+// ─────────────────────────────────────
+// useSetAppState() returns store.setState directly. useAppStateStore()
+// returns the store itself. Separates "subscribing" and "writing" —
+// components that only write but don't read never re-render.
+//
+// useAppStateMaybeOutsideOfProvider(selector)
+// ───────────────────────────────────────────
+// Returns undefined when there's no AppStateProvider. Still uses
+// useSyncExternalStore with a no-op subscriber. Allows components reused
+// independently of the main workspace to run safely in testing or tool scenarios.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: Dead-code elimination via compile-time feature flags (AppState.tsx:12-18)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * `feature('VOICE_MODE')` is a bun:bundle compile-time constant. When false,
+ * the entire VoiceProvider import is eliminated from the external build.
+ * The conditional require() is wrapped in eslint-disable because TS linting
+ * would flag it — but this is intentional for tree-shaking.
+ *
+ * External (open-source) builds get a passthrough: ({ children }) => children.
+ * Internal Anthropic builds include the full voice context provider.
+ *
+ * Same pattern used in Messages.tsx for PROACTIVE/KAIROS modules.
+ */
 /* eslint-disable @typescript-eslint/no-require-imports */
 const VoiceProvider: (props: {
   children: React.ReactNode;
@@ -20,9 +72,13 @@ const VoiceProvider: (props: {
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { type AppState, type AppStateStore, getDefaultAppState } from './AppStateStore.js';
 
-// TODO: Remove these re-exports once all callers import directly from
-// ./AppStateStore.js. Kept for back-compat during migration so .ts callers
-// can incrementally move off the .tsx import and stop pulling React.
+/* ARCHITECTURE NOTE: Back-compat re-exports (AppState.tsx:23-26)
+ * ──────────────────────────────────────────────────────────────
+ * These re-exports exist so existing .ts callers can incrementally
+ * migrate from importing AppState types from this .tsx file (which
+ * pulls in React) to importing from AppStateStore.js (pure state).
+ * TODO: Remove once all callers are migrated.
+ */
 export { type AppState, type AppStateStore, type CompletionBoundary, getDefaultAppState, IDLE_SPECULATION_STATE, type SpeculationResult, type SpeculationState } from './AppStateStore.js';
 export const AppStoreContext = React.createContext<AppStateStore | null>(null);
 type Props = {
@@ -34,6 +90,34 @@ type Props = {
   }) => void;
 };
 const HasAppStateContext = React.createContext<boolean>(false);
+
+/* ARCHITECTURE NOTE: AppStateProvider — state management backbone (AppState.tsx:37-110)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * Creates a Zustand-like store via createStore() and provides it through
+ * React context. Key responsibilities:
+ *
+ * 1. Store creation: Lazily initialized via useState(() => createStore(...))
+ *    so the store is stable across re-renders but created only once.
+ *
+ * 2. Bypass permissions guard: On mount, checks if bypass mode should be
+ *    disabled (remote settings loaded before mount). This prevents
+ *    privilege escalation from stale local state.
+ *
+ * 3. Settings sync: useSettingsChange + useEffectEvent wire external
+ *    settings changes (e.g. ~/.claude/settings.json edits) into the store.
+ *
+ * 4. Nested provider guard: Throws if AppStateProvider is nested — prevents
+ *    accidental double-wrapping in the component tree.
+ *
+ * 5. Context providers: Wraps children in MailboxProvider + VoiceProvider,
+ *    then exposes the store via AppStoreContext and HasAppStateContext.
+ *
+ * Store pattern: External store via useSyncExternalStore (see hooks below).
+ * Components subscribe to slices via selectors — only re-render when the
+ * selected value changes (Object.is comparison).
+ *
+ * See: analysis/components/01-component-architecture-overview.md §3.2
+ */
 export function AppStateProvider(t0) {
   const $ = _c(13);
   const {
@@ -122,6 +206,33 @@ function useAppStore(): AppStateStore {
   }
   return store;
 }
+
+/* ARCHITECTURE NOTE: State subscription hooks (AppState.tsx:142-199)
+ * ──────────────────────────────────────────────────────────────────
+ * Three hooks for different consumption patterns:
+ *
+ * useAppState(selector) — Subscribe to a state slice.
+ *   Uses useSyncExternalStore(store.subscribe, get, get) for optimal
+ *   re-render behavior. Only re-renders when selector output changes
+ *   (Object.is). CRITICAL: selectors must return existing references,
+ *   not new objects — new objects always fail Object.is and cause
+ *   infinite re-renders.
+ *
+ * useSetAppState() — Get the updater only. Never re-renders because
+ *   setState reference is stable. Use for event handlers that only
+ *   dispatch state changes.
+ *
+ * useAppStateStore() — Get the full store object. For passing to
+ *   non-React code (e.g. tool execution pipelines).
+ *
+ * useAppStateMaybeOutsideOfProvider() — Safe version that returns
+ *   undefined instead of throwing. For components that may render
+ *   outside the provider tree (e.g. error boundaries, headless renders).
+ *
+ * The NOOP_SUBSCRIBE pattern enables the "safe outside provider" case:
+ * when no store exists, useSyncExternalStore gets a no-op subscribe
+ * so the hook doesn't crash.
+ */
 
 /**
  * Subscribe to a slice of AppState. Only re-renders when the selected value

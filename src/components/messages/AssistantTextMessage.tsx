@@ -1,3 +1,68 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: AssistantTextMessage.tsx — Error Semantic Router
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// InvalidApiKeyMessage()
+// ──────────────────────
+// Not just "error display" but splitting the same type of API key error into
+// TWO distinct user perceptions: "credential itself is invalid" vs. "local key
+// storage not unlocked." Calls isMacOsKeychainLocked() to detect whether the
+// auth failure is due to a locked keychain, and appends recovery instructions
+// for `security unlock-keychain` when appropriate.
+//
+// AssistantTextMessage(...)
+// ─────────────────────────
+// "The error semantic router for assistant text blocks." Unifies model output,
+// platform errors, user interruptions, rate limiting, subscription balance,
+// and context overflows into a single leaf node for final judgment. Flow:
+// 1. Exclude empty text via isEmptyMessageText
+// 2. Redirect rate limit errors to RateLimitMessage
+// 3. Hardcoded dispatch for special constants (NO_RESPONSE_REQUESTED,
+//    PROMPT_TOO_LONG, CREDIT_BALANCE_TOO_LOW, INVALID_API_KEY,
+//    TOKEN_REVOKED, API_TIMEOUT, CUSTOM_OFF_SWITCH, USER_ABORT)
+// 4. General API errors → startsWithApiErrorPrefix branch, truncate to
+//    MAX_API_ERROR_CHARS in non-verbose mode
+// 5. Fallback → normal markdown text rendering
+//
+// IMPORTANT DESIGN CHOICE: Normal text and system errors are NOT rendered by
+// different upper-level components — the final fork happens HERE.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: AssistantTextMessage — error semantic router (AssistantTextMessage.tsx:1-301)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * The final judgment point for assistant text blocks. Routes between normal
+ * model output and ~10 different error/interruption/edge-case types.
+ *
+ * Key patterns:
+ *
+ * 1. Constant-based dispatch: Special sentinel strings (NO_RESPONSE_REQUESTED,
+ *    PROMPT_TOO_LONG, etc.) are matched by exact equality — not by prefix or
+ *    heuristic. This is a controlled vocabulary between the API and the UI.
+ *
+ * 2. Platform error detection: startsWithApiErrorPrefix() identifies errors
+ *    that start with known prefixes. Truncated to 1000 chars in non-verbose
+ *    mode to prevent transcript flooding.
+ *
+ * 3. Rate limit delegation: isRateLimitErrorMessage() detects rate limit
+ *    errors and delegates to RateLimitMessage (which shows retry options).
+ *
+ * 4. Keychain awareness: InvalidApiKeyMessage checks isMacOsKeychainLocked()
+ *    to distinguish "bad key" from "locked keychain" — shows recovery
+ *    instructions for the latter.
+ *
+ * 5. Context window upgrades: getUpgradeMessage() suggests model upgrades
+ *    when context overflow is detected.
+ *
+ * 6. User abort: ERROR_MESSAGE_USER_ABORT triggers InterruptedByUser display.
+ *    CUSTOM_OFF_SWITCH_MESSAGE indicates the model was explicitly turned off.
+ *
+ * 7. Selection-aware styling: MessageActionsSelectedContext provides background
+ *    color for selected message highlighting.
+ *
+ * See: analysis/components/messages/ — assistant text/error display
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import React, { useContext } from 'react';

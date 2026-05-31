@@ -2,6 +2,23 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Text } from '../../../ink.js';
 import { MessageResponse } from '../../MessageResponse.js';
+
+/* ARCHITECTURE NOTE: RejectedToolUseMessage — tool rejection placeholder (RejectedToolUseMessage.tsx:1-16)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Minimal static component: "Tool use rejected" in dimColor.
+ *
+ * Key patterns:
+ *
+ * 1. Simplest tool result component: 16 lines, no props, no conditional
+ *    rendering. Uses Symbol.for("react.memo_cache_sentinel") for memo cache.
+ *
+ * 2. MessageResponse wrapper: Appears connected to the message above.
+ *
+ * 3. Used when the user explicitly rejects a tool use (vs. cancel which
+ *    uses InterruptedByUser, or error which shows error details).
+ *
+ * See: analysis/components/messages/ — tool rejection placeholder
+ */
 export function RejectedToolUseMessage() {
   const $ = _c(1);
   let t0;

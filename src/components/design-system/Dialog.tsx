@@ -1,3 +1,46 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: Dialog.tsx — Universal Terminal Dialog
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// Dialog(...)
+// ───────────
+// Unifies "cancel, exit, border, input guide" for all terminal dialogs.
+// Handles default color and isCancelActive state. Calls
+// useExitOnCtrlCDWithKeybindings to construct exitState. Uses
+// useKeybinding('confirm:no', onCancel) for cancel behavior. If the user has
+// already pressed an exit key once, shows "Press {keyName} again to exit."
+// Otherwise shows standard action hints (Enter confirm, Esc cancel).
+// When hideBorder is true, returns only content; otherwise wraps in a Pane.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: Dialog — universal terminal dialog primitive (Dialog.tsx:1-154)
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * Core building block of the terminal design system. All platform dialogs
+ * (agents, MCP, tasks, teams, permissions, bridge, search) use this component.
+ *
+ * Key patterns:
+ *
+ * 1. Exit handling: useExitOnCtrlCDWithKeybindings provides consistent Ctrl+C/D
+ *    exit behavior. Double-press protection: "Press {key} again to exit" after
+ *    first press.
+ *
+ * 2. Cancel keybinding: useKeybinding('confirm:no', onCancel) wired to Esc/n.
+ *    isCancelActive flag allows embedded text fields to intercept these keys.
+ *
+ * 3. Border control: hideBorder returns content without Pane wrapper. Used
+ *    for inline dialogs that don't need a visual frame.
+ *
+ * 4. Input guide: ConfigurableShortcutHint + KeyboardShortcutHint render
+ *    the action hints (Enter confirm, Esc cancel). Custom inputGuide prop
+ *    allows override with exitState context.
+ *
+ * 5. Color theming: Default "permission" color, overridable via color prop.
+ *    Integrates with the Theme system for consistent terminal styling.
+ *
+ * See: analysis/components/design-system/ — base UI primitive
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import React from 'react';
 import { type ExitState, useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';

@@ -17,6 +17,38 @@ import { Dialog } from './design-system/Dialog.js';
 type Props = {
   onDone: () => void;
 };
+
+/* ARCHITECTURE NOTE: BridgeDialog — IDE bridge connection management (BridgeDialog.tsx:1-401)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * Manages the connection between Claude Code CLI and IDE extensions (VS Code,
+ * JetBrains) via the Bridge protocol. Handles connection lifecycle, QR code
+ * generation, and session management.
+ *
+ * Key patterns:
+ *
+ * 1. State subscription: Reads 9+ AppState slices (connected, sessionActive,
+ *    reconnecting, connectUrl, sessionUrl, error, explicit, environmentId,
+ *    sessionId) via individual useAppState calls.
+ *
+ * 2. QR code generation: qrcode library generates terminal-friendly QR codes
+ *    for mobile/IDE connection. Small mode + low error correction for terminal
+ *    rendering constraints.
+ *
+ * 3. Status visualization: BRIDGE_READY_INDICATOR / BRIDGE_FAILED_INDICATOR
+ *    figures provide visual status. Footer text built via buildActiveFooterText
+ *    / buildIdleFooterText / FAILED_FOOTER_TEXT.
+ *
+ * 4. Git integration: getBranch() fetches current branch name for display.
+ *    getOriginalCwd() provides the workspace root for context.
+ *
+ * 5. Keyboard controls: useInput for 'd' key (disconnect) — raw keybinding
+ *    (not configurable) for direct action. useKeybindings for standard
+ *    dialog navigation.
+ *
+ * 6. Config persistence: saveGlobalConfig stores bridge preferences.
+ *
+ * See: analysis/components/04-component-index.md §2.5
+ */
 export function BridgeDialog(t0) {
   const $ = _c(87);
   const {

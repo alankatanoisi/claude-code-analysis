@@ -1,3 +1,66 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: PromptInputFooter.tsx — Footer Orchestrator
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// PromptInputFooter(...)
+// ──────────────────────
+// "A footer orchestrator, not a single display component." Unifies multiple
+// mutually exclusive states at the bottom of the prompt area into a single
+// chain. Uses narrow terminal layout (columns < 80) and fullscreen detection
+// to decide what to show. Determines whether to hide optional status lines
+// based on isFullscreenEnvEnabled() and rows < 24. Orchestrates:
+// - PromptInputFooterLeftSide (left info)
+// - Notifications (alerts)
+// - BridgeStatusIndicator (remote connection)
+// - CoordinatorTaskPanel (active tasks)
+// - Suggestions overlay or help menu
+//
+// BridgeStatusIndicator(...)
+// ──────────────────────────
+// Bridge/remote is NOT a separate page feature — it's compressed into a
+// persistent status entry on the prompt footer. Uses feature('BRIDGE_MODE')
+// as compile-time switch, reads global bridge state, calls getBridgeStatus
+// to generate a unified status object. For implicit remote, only shows when
+// "Remote Control reconnecting". For selected state, appends "Enter to view".
+// ============================================================================
+
+/* ARCHITECTURE NOTE: PromptInputFooter — footer state orchestrator (PromptInputFooter.tsx:1-218)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * Orchestrates the bottom-of-prompt area, managing multiple mutually exclusive
+ * display states and responsive layout decisions.
+ *
+ * Key patterns:
+ *
+ * 1. Responsive layout: columns < 80 triggers narrow mode (hides some elements).
+ *    rows < 24 in fullscreen hides optional status lines to preserve input space.
+ *
+ * 2. Mutually exclusive states: Only one of suggestions/help/tasks/teams/bridge
+ *    shows at a time. Selection state from AppState (footerItemSelected) drives
+ *    which panel renders.
+ *
+ * 3. Bridge status: Compressed into a persistent footer pill (not a separate
+ *    page). feature('BRIDGE_MODE') gates the entire feature. Shows reconnecting
+ *    state for implicit remote, "Enter to view" for selected state.
+ *
+ * 4. Coordinator task panel: getVisibleAgentTasks() shows retained-completed
+ *    agents too (not just running). useCoordinatorTaskCount for task count.
+ *
+ * 5. Suggestions overlay: PromptInputFooterSuggestions renders typeahead
+ *    completions. Help menu (PromptInputHelpMenu) shows when helpOpen=true.
+ *
+ * 6. Status line: StatusLine component shows model info, permission mode,
+ *    and other contextual status. statusLineShouldDisplay() determines visibility.
+ *
+ * 7. Notifications: Inline alerts (Notifications component) render above the
+ *    footer with timeout-based auto-dismissal.
+ *
+ * 8. Undercover mode: isUndercover() suppresses certain display elements for
+ *    demo/showcase scenarios.
+ *
+ * See: analysis/components/PromptInput/ — footer orchestration
+ */
+
 import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { memo, type ReactNode, useMemo, useRef } from 'react';

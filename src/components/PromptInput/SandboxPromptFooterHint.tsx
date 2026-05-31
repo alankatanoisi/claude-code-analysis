@@ -4,6 +4,31 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Box, Text } from '../../ink.js';
 import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js';
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js';
+
+/* ARCHITECTURE NOTE: SandboxPromptFooterHint — sandbox violation indicator (SandboxPromptFooterHint.tsx:1-64)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Shows recent sandbox violations count in the prompt footer.
+ *
+ * Key patterns:
+ *
+ * 1. Violation store subscription: SandboxManager.getSandboxViolationStore()
+ *    .subscribe() listens for new violations. Tracks delta (newViolations)
+ *    to detect fresh violations.
+ *
+ * 2. Auto-dismiss timer: setTimeout(setRecentViolationCount, 5000, 0)
+ *    clears the violation count after 5 seconds. clearTimeout on cleanup.
+ *
+ * 3. Shortcut hint: useShortcutDisplay("app:toggleTranscript") shows
+ *    how to view violation details (Ctrl+O for transcript).
+ *
+ * 4. Sandbox gate: SandboxManager.isSandboxingEnabled() — component
+ *    does nothing when sandbox is not active.
+ *
+ * 5. useEffect cleanup: Unsubscribes from store and clears timer on
+ *    unmount — prevents memory leaks.
+ *
+ * See: analysis/components/PromptInput/ — sandbox violation hint
+ */
 export function SandboxPromptFooterHint() {
   const $ = _c(6);
   const [recentViolationCount, setRecentViolationCount] = useState(0);

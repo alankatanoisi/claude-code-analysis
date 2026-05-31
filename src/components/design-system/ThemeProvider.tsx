@@ -1,3 +1,60 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: ThemeProvider.tsx — Three-Layer Theme System
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// ThemeProvider(...)
+// ──────────────────
+// Cleanly splits the theme system into THREE layers:
+// 1. Persistent setting: themeSetting — saved to global config (disk)
+// 2. Temporary preview: previewTheme — active while theme picker is open
+// 3. System resolution: systemTheme — tracks terminal theme for 'auto' mode
+//
+// activeSetting = previewTheme ?? themeSetting (preview wins while open)
+//
+// Provides via useMemo: setThemeSetting(newSetting), setPreviewTheme(newSetting),
+// savePreview(), cancelPreview(). Watches terminal theme changes via OSC 11
+// (watchSystemTheme) when 'auto' is active. Seeds from $COLORFGBG or 'dark'.
+//
+// useTheme() returns [currentTheme, setThemeSetting] — the resolved theme name
+// useThemeSetting() returns the raw setting (may be 'auto')
+// usePreviewTheme() returns the preview controller
+// ============================================================================
+
+/* ARCHITECTURE NOTE: ThemeProvider — three-layer theme system (ThemeProvider.tsx:1-193)
+ * ────────────────────────────────────────────────────────────────────────────────────
+ * Manages terminal theme resolution through three distinct layers:
+ *
+ * 1. Persistent setting (themeSetting): Saved to global config on disk.
+ *    May be 'auto', 'dark', 'light', or a specific theme name.
+ *
+ * 2. Temporary preview (previewTheme): Active while theme picker is open.
+ *    Allows users to preview themes before committing. preview wins over
+ *    themeSetting when set.
+ *
+ * 3. System resolution (systemTheme): Tracks terminal emulator's actual
+ *    theme via OSC 11 response. Only used when themeSetting === 'auto'.
+ *    Seeds from $COLORFGBG env var or defaults to 'dark'.
+ *
+ * Key patterns:
+ *
+ * - activeSetting = previewTheme ?? themeSetting (preview wins while open)
+ * - currentTheme = resolved theme name (never 'auto') — what actually renders
+ * - savePreview() commits preview to persistent setting
+ * - cancelPreview() discards preview and reverts to saved setting
+ * - watchSystemTheme() listens for terminal theme changes via OSC 11
+ * - feature-gated for ant-only system theme tracking
+ *
+ * Hooks:
+ * - useTheme(): [currentTheme, setThemeSetting] — resolved theme + setter
+ * - useThemeSetting(): raw setting (may be 'auto')
+ * - usePreviewTheme(): preview controller (setPreviewTheme, savePreview, cancelPreview)
+ *
+ * Default: 'dark' for non-'auto' so useTheme() works without provider (tests, tooling).
+ *
+ * See: analysis/components/design-system/ — theme management
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';

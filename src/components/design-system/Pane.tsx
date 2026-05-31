@@ -12,6 +12,33 @@ type PaneProps = {
   color?: keyof Theme;
 };
 
+/* ARCHITECTURE NOTE: Pane — terminal region container (Pane.tsx:1-77)
+ * ───────────────────────────────────────────────────────────────────
+ * A bounded region with a colored top border line, one-row gap above,
+ * and horizontal padding. Used by all slash-command screens (/config,
+ * /help, /plugins, /sandbox, /stats, /permissions).
+ *
+ * Key patterns:
+ *
+ * 1. Modal awareness: useIsInsideModal() detects when Pane is rendered
+ *    inside a modal context. In modal mode, skips the border (the modal
+ *    provides its own frame) and reduces padding.
+ *
+ * 2. Border rendering: Divider component with themed color creates the
+ *    top border line. Default "permission" color.
+ *
+ * 3. Layout: Box with flexDirection="column", paddingX=2 for content,
+ *    paddingX=1 for modal content. flexShrink=0 in modal mode.
+ *
+ * 4. Submenu guidance: Submenus inside a Pane should use hideBorder on
+ *    their Dialog so the Pane's border remains the single frame.
+ *
+ * 5. Distinction from Dialog: Dialog handles confirm/cancel with keybindings.
+ *    Pane is a visual container only — no built-in exit handling.
+ *
+ * See: analysis/components/design-system/ — base UI primitive
+ */
+
 /**
  * A pane — a region of the terminal that appears below the REPL prompt,
  * bounded by a colored top line with a one-row gap above and horizontal

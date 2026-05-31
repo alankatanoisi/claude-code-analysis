@@ -44,14 +44,18 @@ import type { ToolUseConfirm } from './permissions/PermissionRequest.js';
 import { StatusNotices } from './StatusNotices.js';
 import type { JumpHandle } from './VirtualMessageList.js';
 
-// Memoed logo header: this box is the FIRST sibling before all MessageRows
-// in main-screen mode. If it becomes dirty on every Messages re-render,
-// renderChildren's seenDirtyChild cascade disables prevScreen (blit) for
-// ALL subsequent siblings — every MessageRow re-writes from scratch instead
-// of blitting. In long sessions (~2800 messages) this is 150K+ writes/frame
-// and pegs CPU at 100%. Memo on agentDefinitions so a new messages array
-// doesn't invalidate the logo subtree. LogoV2/StatusNotices internally
-// subscribe to useAppState/useSettings for their own updates.
+/* ARCHITECTURE NOTE: Memoized logo header — critical performance optimization (Messages.tsx:47-76)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────
+ * LogoHeader is React.memo'd on agentDefinitions. This is NOT cosmetic —
+ * if the logo subtree re-renders on every Messages update, renderChildren's
+ * seenDirtyChild cascade disables prevScreen (blit) for ALL subsequent
+ * MessageRow siblings. In long sessions (~2800 messages) this causes
+ * 150K+ writes/frame and pegs CPU at 100%.
+ *
+ * The OffscreenFreeze wrapper further isolates rendering. LogoV2 and
+ * StatusNotices internally subscribe to useAppState/useSettings for their
+ * own updates, so the memo doesn't block their refresh.
+ */
 const LogoHeader = React.memo(function LogoHeader(t0) {
   const $ = _c(3);
   const {
@@ -75,7 +79,13 @@ const LogoHeader = React.memo(function LogoHeader(t0) {
   return t2;
 });
 
-// Dead code elimination: conditional import for proactive mode
+/* ARCHITECTURE NOTE: Conditional module loading via feature flags (Messages.tsx:78-84)
+ * ───────────────────────────────────────────────────────────────────────────────────
+ * PROACTIVE and KAIROS features are gated by compile-time feature() checks.
+ * When disabled, the entire module is eliminated from the build (DCE).
+ * BRIEF_TOOL_NAME and SEND_USER_FILE_TOOL_NAME are only available in
+ * KAIROS builds — they control the brief-mode filtering pipeline below.
+ */
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule = feature('PROACTIVE') || feature('KAIROS') ? require('../proactive/index.js') : null;
 const BRIEF_TOOL_NAME: string | null = feature('KAIROS') || feature('KAIROS_BRIEF') ? (require('../tools/BriefTool/prompt.js') as typeof import('../tools/BriefTool/prompt.js')).BRIEF_TOOL_NAME : null;
@@ -83,6 +93,79 @@ const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS') ? (require('..
 
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { VirtualMessageList } from './VirtualMessageList.js';
+
+/* ARCHITECTURE NOTE: Dual-hub message orchestrator (Messages.tsx:87-834)
+ * ──────────────────────────────────────────────────────────────────────
+ * This is the PRIMARY display hub of the application. It receives raw
+ * messages from the API and transforms them through a multi-stage pipeline:
+ *
+ *   normalizeMessages → compact boundary filter → reorder → group
+ *   → collapse (bash/hook/teammate/read-search) → brief filter → cap slice
+ *
+ * Key design decisions:
+ *
+ * 1. Memo separation: Expensive transforms (normalize, group, collapse)
+ *    are in a separate useMemo from the renderRange slice. This prevents
+ *    every scroll from rebuilding 6 Maps over 27k messages (~50ms alloc).
+ *
+ * 2. UUID-based slice anchors: Replaced count-based slicing (slice(-200))
+ *    which dropped one message per turn and forced terminal resets.
+ *    UUID anchors only advance when rendered count genuinely exceeds
+ *    CAP+STEP — immune to length churn from grouping/compaction.
+ *
+ * 3. Custom React.memo comparator: Prevents re-renders during streaming
+ *    when only delta content changes but contentBlock references are stable.
+ *    Handles streamingToolUses, inProgressToolUseIDs, unseenDivider, tools.
+ *
+ * 4. Brief mode: Two-tier filtering — filterForBriefTool drops all assistant
+ *    text except Brief tool output; dropTextInBriefTurns removes redundant
+ *    text in turns where Brief was called.
+ *
+ * 5. Performance cap: MAX_MESSAGES_WITHOUT_VIRTUALIZATION=200 prevents
+ *    GC death spiral in non-virtual mode (observed: 59GB RSS at 2000 msgs).
+ *    VirtualMessageList bypasses this entirely.
+ *
+ * See: analysis/components/02-core-interaction-components.md §1
+ */
+
+// ============================================================================
+// CHAPTER 5 ANALYSIS: Messages.tsx — Transcript Preprocessing Functions
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// filterForBriefTool(messages, briefToolNames)
+// ────────────────────────────────────────────
+// Redefines Brief mode as a dedicated view showing ONLY Brief-related messages
+// and real user input. Two-pass approach: first pass finds Brief tool_use IDs
+// in assistant messages, second pass filters to keep only relevant messages.
+// Kept elements: non-api_metrics system messages, API error assistant messages,
+// Brief tool_use messages, corresponding user tool_result, non-meta real user
+// input, and queued_command attachments with commandMode === 'prompt'.
+// All other assistant text is discarded.
+//
+// dropTextInBriefTurns(messages, briefToolNames)
+// ──────────────────────────────────────────────
+// Different from filterForBriefTool: this is "deduplication cleaning" for
+// transcript mode rather than strict filtering. Divides turns by non-meta
+// user message, marks each assistant text block with its turn, then removes
+// assistant text in any turn where a Brief tool_use appears.
+//
+// computeSliceStart(collapsed, anchorRef, cap, step)
+// ────────────────────────────────────────────────────
+// Message truncation for the "non-virtualized path." Uses uuid+idx combined
+// anchoring to avoid: window jitter when message groups are reordered, sudden
+// jumps to 0 after compaction, and terminal scrollback constant resetting
+// due to front truncation. Finds anchor by uuid with fallback to historical index.
+//
+// shouldRenderStatically(message, ...)
+// ────────────────────────────────────
+// Core of the stable message rendering strategy. Determines which rows can be
+// FROZEN (static) and which must continue updating with tool state. Transcript
+// mode always returns true. Normal messages are static if they have no toolUseID,
+// dynamic if in streamingToolUseIDs or inProgressToolUseIDs. System api_error
+// messages stay dynamic. grouped_tool_use requires all within group to be resolved.
+// collapsed_read_search is always dynamic in prompt mode.
+// ============================================================================
 
 /**
  * In brief-only mode, filter messages to show ONLY Brief tool_use blocks,
@@ -311,7 +394,23 @@ export type SliceAnchor = {
   idx: number;
 } | null;
 
-/** Exported for testing. Mutates anchorRef when the window needs to advance. */
+/* ARCHITECTURE NOTE: UUID-based slice anchor algorithm (Messages.tsx:314-340)
+ * ──────────────────────────────────────────────────────────────────────────
+ * computeSliceStart replaces count-based slicing to prevent terminal reset
+ * on every message append. The algorithm:
+ *
+ * 1. Try to find the anchor UUID in the collapsed array.
+ * 2. If found, use that index. If lost (collapse regrouping), fall back
+ *    to the stored index (clamped) — keeps slice roughly in place.
+ * 3. Advance the window only when length - start > cap + step (quantized).
+ * 4. Refresh the anchor from the current start position — heals stale
+ *    UUIDs after fallback and captures new ones after advancement.
+ *
+ * This is exported for testing. The anchor lives in a useRef so it
+ * persists across renders but is mutable (idempotent under StrictMode).
+ *
+ * See: CC-941, CC-1154, CC-1174 (bug trackers referenced in comments)
+ */
 export function computeSliceStart(collapsed: ReadonlyArray<{
   uuid: string;
 }>, anchorRef: {
@@ -725,6 +824,26 @@ const MessagesImpl = ({
 function expandKey(msg: RenderableMessage): string {
   return (msg.type === 'assistant' || msg.type === 'user' ? getToolUseID(msg) : null) ?? msg.uuid;
 }
+
+/* ARCHITECTURE NOTE: shouldRenderStatically — render optimization gate (Messages.tsx:779-833)
+ * ──────────────────────────────────────────────────────────────────────────────────────────
+ * Determines whether a message can be rendered as a static (non-updating)
+ * subtree. Key rules:
+ *
+ * - Transcript mode: always static (no streaming updates needed).
+ * - Messages with streaming/in-progress tool IDs: dynamic (must update).
+ * - Messages with unresolved PostToolUse hooks: dynamic (hook progress
+ *   updates need to render).
+ * - server_tool_use: static only if the tool_use_id is resolved.
+ * - grouped_tool_use: static only if ALL child tool_uses are resolved.
+ * - collapsed_read_search: never static in prompt mode (prevents flicker
+ *   between API turns).
+ * - api_error: never static (hidden as soon as another non-error appears).
+ *
+ * This function is called by MessageRow to decide whether to skip re-render
+ * checks — a critical optimization for long sessions where most messages
+ * are fully resolved.
+ */
 
 // Custom comparator to prevent unnecessary re-renders during streaming.
 // Default React.memo does shallow comparison which fails when:

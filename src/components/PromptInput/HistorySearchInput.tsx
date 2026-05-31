@@ -3,6 +3,29 @@ import * as React from 'react';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text } from '../../ink.js';
 import TextInput from '../TextInput.js';
+
+/* ARCHITECTURE NOTE: HistorySearchInput — prompt history search (HistorySearchInput.tsx:1-51)
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * Inline search input for browsing command history (Ctrl+R style).
+ *
+ * Key patterns:
+ *
+ * 1. Dynamic label: "search prompts:" (normal) vs. "no matching prompt:"
+ *    (historyFailedMatch=true) — gives immediate feedback on search results.
+ *
+ * 2. TextInput delegation: Reuses the main TextInput component with
+ *    cursorOffset tracking, dimColor styling, and focus management.
+ *
+ * 3. Width calculation: stringWidth(value) + 1 for cursor space — ensures
+ *    the input field expands to fit the search text.
+ *
+ * 4. Auto-focus: focus={true}, showCursor={true} — immediately ready
+ *    for typing when activated.
+ *
+ * 5. Single-line: multiline={false} — history search is always one line.
+ *
+ * See: analysis/components/PromptInput/ — history search
+ */
 type Props = {
   value: string;
   onChange: (value: string) => void;

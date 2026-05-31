@@ -5,6 +5,24 @@ import * as React from 'react';
 import { COMMAND_MESSAGE_TAG } from '../../constants/xml.js';
 import { Box, Text } from '../../ink.js';
 import { extractTag } from '../../utils/messages.js';
+
+/* ARCHITECTURE NOTE: UserCommandMessage — command display (UserCommandMessage.tsx:1-108)
+ * ───────────────────────────────────────────────────────────────────────────────────
+ * Renders a user command wrapped in <command-message> XML tags.
+ *
+ * Key patterns:
+ *
+ * 1. XML tag extraction: extractTag(text, COMMAND_MESSAGE_TAG) parses the
+ *    command content from the XML-wrapped text block.
+ *
+ * 2. Command display: Shows the command with a ❯ prefix and appropriate
+ *    styling to distinguish it from regular user text.
+ *
+ * 3. Used for slash commands and special command invocations that need
+ *    structured display (vs. plain text prompts).
+ *
+ * See: analysis/components/messages/ — command display
+ */
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;

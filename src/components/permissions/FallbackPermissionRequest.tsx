@@ -13,6 +13,42 @@ import { PermissionPrompt, type PermissionPromptOption, type ToolAnalyticsContex
 import type { PermissionRequestProps } from './PermissionRequest.js';
 import { PermissionRuleExplanation } from './PermissionRuleExplanation.js';
 type FallbackOptionValue = 'yes' | 'yes-dont-ask-again' | 'no';
+
+/* ARCHITECTURE NOTE: FallbackPermissionRequest — generic permission handler (FallbackPermissionRequest.tsx:1-333)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Generic permission request for tools that don't have a specialized
+ * permission component. Used as the fallback for unknown or feature-gated
+ * tools (ReviewArtifact, Workflow, Monitor when disabled).
+ *
+ * Key patterns:
+ *
+ * 1. Tool name resolution: tool.userFacingName(input) gets the display name.
+ *    Strips " (MCP)" suffix for cleaner display.
+ *
+ * 2. Permission options: yes, yes-dont-ask-again, no. The "don't ask again"
+ *    option creates a persistent permission rule via PermissionUpdate.
+ *
+ * 3. Analytics: logUnaryEvent tracks accept/reject decisions with metadata
+ *    (completion_type: "tool_use_single", language_name: "none").
+ *    usePermissionRequestLogging sets up logging lifecycle.
+ *
+ * 4. Rule explanation: PermissionRuleExplanation shows what rule would be
+ *    created if the user selects "don't ask again".
+ *
+ * 5. PermissionPrompt: Generic prompt UI with option buttons and feedback
+ *    collection. Supports ToolAnalyticsContext for metadata.
+ *
+ * 6. Always-allow gating: shouldShowAlwaysAllowOptions() determines whether
+ *    to show the "don't ask again" option (may be disabled by policy).
+ *
+ * 7. Input truncation: truncateToLines() limits displayed tool input to
+ *    prevent overwhelming the dialog with large payloads.
+ *
+ * 8. Environment awareness: getOriginalCwd() for context, env for
+ *    environment-specific behavior.
+ *
+ * See: analysis/components/permissions/ — fallback permission handling
+ */
 export function FallbackPermissionRequest(t0) {
   const $ = _c(58);
   const {

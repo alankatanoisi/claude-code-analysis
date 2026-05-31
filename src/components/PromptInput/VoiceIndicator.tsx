@@ -4,6 +4,31 @@ import * as React from 'react';
 import { useSettings } from '../../hooks/useSettings.js';
 import { Box, Text, useAnimationFrame } from '../../ink.js';
 import { interpolateColor, toRGBColor } from '../Spinner/utils.js';
+
+/* ARCHITECTURE NOTE: VoiceIndicator — voice mode status indicator (VoiceIndicator.tsx:1-137)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * Animated indicator showing voice input state (idle/recording/processing).
+ *
+ * Key patterns:
+ *
+ * 1. Feature gate: feature("VOICE_MODE") — entire component is null when
+ *    voice mode is not enabled (compile-time trimming via bun:bundle).
+ *
+ * 2. Three states:
+ *    - idle: Static indicator
+ *    - recording: Animated waveform/pulse with color cycling
+ *    - processing: Shimmer animation (dim gray → bright gray, 2s period)
+ *
+ * 3. Animation: useAnimationFrame for frame-by-frame updates.
+ *    PULSE_PERIOD_S=2 for all pulsing animations.
+ *
+ * 4. Color interpolation: interpolateColor + toRGBColor for smooth color
+ *    transitions during recording state.
+ *
+ * 5. Settings integration: useSettings for voice mode configuration.
+ *
+ * See: analysis/components/PromptInput/ — voice mode UI
+ */
 type Props = {
   voiceState: 'idle' | 'recording' | 'processing';
 };

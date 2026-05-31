@@ -5,6 +5,26 @@ import { useMemo } from 'react';
 import { Box, Text } from '../../ink.js';
 import { extractTag } from '../../utils/messages.js';
 import { MessageResponse } from '../MessageResponse.js';
+
+/* ARCHITECTURE NOTE: UserMemoryInputMessage — memory save feedback (UserMemoryInputMessage.tsx:1-75)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * Renders feedback when the model saves user memory (e.g., "Remember this").
+ *
+ * Key patterns:
+ *
+ * 1. Randomized feedback: getSavingMessage() samples from ["Got it.",
+ *    "Good to know.", "Noted."] — varies the response to feel more natural.
+ *
+ * 2. XML tag extraction: extractTag(text, "user-memory-input") parses
+ *    the memory content from the XML-wrapped text.
+ *
+ * 3. Two-phase display: "Saving..." while in progress → randomized
+ *    confirmation message after save completes.
+ *
+ * 4. MessageResponse wrapper: Appears connected to the message above.
+ *
+ * See: analysis/components/messages/ — memory save feedback
+ */
 function getSavingMessage(): string {
   return sample(['Got it.', 'Good to know.', 'Noted.']);
 }

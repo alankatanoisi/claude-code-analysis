@@ -6,6 +6,37 @@ import type { AdvisorBlock } from '../../utils/advisor.js';
 import { renderModelName } from '../../utils/model/model.js';
 import { jsonStringify } from '../../utils/slowOperations.js';
 import { CtrlOToExpand } from '../CtrlOToExpand.js';
+
+/* ARCHITECTURE NOTE: AdvisorMessage — AI advisor/reviewer renderer (AdvisorMessage.tsx:1-158)
+ * ────────────────────────────────────────────────────────────────────────────────────────
+ * Renders advisor blocks — an AI "advisor" model that reviews conversation
+ * and provides feedback/approval. Used in plan mode and quality review flows.
+ *
+ * Key patterns:
+ *
+ * 1. Two block types:
+ *    - server_tool_use: Advisor invocation (shows "Advising" with loader,
+ *      model name, and optional input summary).
+ *    - advisor_tool_result_error: Error display ("Advisor unavailable (code)").
+ *    - advisor_result: Full text result or compacted summary with Ctrl+O hint.
+ *    - advisor_redacted_result: Fixed message (reviewed + will apply feedback).
+ *
+ * 2. Model name rendering: renderModelName(advisorModel) shows which model
+ *    was used for advisory review (e.g., "Sonnet 4", "Opus 4").
+ *
+ * 3. Tool state tracking: resolvedToolUseIDs/erroredToolUseIDs determine
+ *    whether the advisor tool call completed or errored. ToolUseLoader
+ *    shows spinner for in-progress calls.
+ *
+ * 4. Verbose mode: In non-verbose mode, advisor_result shows a compacted
+ *    summary ("✓ Advisor has reviewed... Ctrl+O to expand") instead of
+ *    full text.
+ *
+ * 5. MessageResponse wrapper: Results appear connected to the message above
+ *    via MessageResponse styling.
+ *
+ * See: analysis/components/messages/ — advisor/review UI
+ */
 import { MessageResponse } from '../MessageResponse.js';
 import { ToolUseLoader } from '../ToolUseLoader.js';
 type Props = {

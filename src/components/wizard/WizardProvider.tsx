@@ -3,6 +3,32 @@ import React, { createContext, type ReactNode, useCallback, useEffect, useMemo, 
 import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import type { WizardContextValue, WizardProviderProps } from './types.js';
 
+/* ARCHITECTURE NOTE: WizardProvider — multi-step wizard state machine (WizardProvider.tsx:1-213)
+ * ────────────────────────────────────────────────────────────────────────────────────────
+ * Context provider for multi-step wizard dialogs (onboarding, setup flows).
+ *
+ * Key patterns:
+ *
+ * 1. Wizard state: currentStepIndex, wizardData (generic T), isCompleted,
+ *    navigationHistory for back/forward navigation.
+ *
+ * 2. Context API: WizardContext with createContext<WizardContextValue<T>>
+ *    for type-safe wizard data sharing across steps.
+ *
+ * 3. Navigation: setCurrentStepIndex with history tracking. Supports
+ *    forward, back, and jump-to-step navigation.
+ *
+ * 4. Completion: onComplete callback with final wizardData. onCancel
+ *    for early exit.
+ *
+ * 5. Keybinding: useExitOnCtrlCDWithKeybindings for dialog dismissal.
+ *
+ * 6. Generic data: WizardData type parameter allows any step data shape.
+ *    initialData defaults to {} as T.
+ *
+ * See: analysis/components/wizard/ — wizard state management
+ */
+
 // Use any here for the context since it will be cast properly when used
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const WizardContext = createContext<WizardContextValue<any> | null>(null);

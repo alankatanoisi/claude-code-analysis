@@ -18,6 +18,41 @@ import { TURN_COMPLETION_VERBS } from '../../constants/turnCompletionVerbs.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import type { SystemMessage, SystemStopHookSummaryMessage, SystemBridgeStatusMessage, SystemTurnDurationMessage, SystemThinkingMessage, SystemMemorySavedMessage } from '../../types/message.js';
 import { SystemAPIErrorMessage } from './SystemAPIErrorMessage.js';
+
+/* ARCHITECTURE NOTE: SystemTextMessage — system message multiplexer (SystemTextMessage.tsx:1-827)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * The largest system message renderer. Dispatches ~15 different system message
+ * types into appropriate visual representations. This is the "status bar" of
+ * the session lifecycle.
+ *
+ * Key patterns:
+ *
+ * 1. Message type dispatch: Handles SystemStopHookSummary, SystemBridgeStatus,
+ *    SystemTurnDuration, SystemThinking, SystemMemorySaved, SystemAPIError,
+ *    and turn completion verbs.
+ *
+ * 2. Turn completion verbs: TURN_COMPLETION_VERBS array provides varied
+ *    status messages ("Done", "Complete", "Finished") to avoid repetition.
+ *
+ * 3. Feature-gated team member saved: teamMemSaved (feature('TEAMMEM'))
+ *    gates teammate memory saved display.
+ *
+ * 4. Task state integration: isBackgroundTask and getPillLabel integrate
+ *    with the background task system for task-related system messages.
+ *
+ * 5. Bridge status: SystemBridgeStatusMessage shows bridge connection status
+ *    with real-time state updates.
+ *
+ * 6. Duration formatting: formatDuration, formatSecondsShort for turn
+ *    duration and timing display.
+ *
+ * 7. File path links: FilePathLink with openPath for clickable file links
+ *    in system messages about file operations.
+ *
+ * 8. Terminal size awareness: useTerminalSize for responsive layout.
+ *
+ * See: analysis/components/messages/ — system message multiplexer
+ */
 import { formatDuration, formatNumber, formatSecondsShort } from '../../utils/format.js';
 import { getGlobalConfig } from '../../utils/config.js';
 import Link from '../../ink/components/Link.js';

@@ -5,6 +5,31 @@ import { type NetworkHostPattern, shouldAllowManagedSandboxDomainsOnly } from 's
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { Select } from '../CustomSelect/select.js';
 import { PermissionDialog } from './PermissionDialog.js';
+
+/* ARCHITECTURE NOTE: SandboxPermissionRequest — sandbox network access permission (SandboxPermissionRequest.tsx:1-163)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Requests user approval for sandbox network access to specific host patterns.
+ *
+ * Key patterns:
+ *
+ * 1. Host pattern matching: NetworkHostPattern from sandbox-adapter.js
+ *    determines which domains the sandbox can access.
+ *
+ * 2. Managed sandbox domains: shouldAllowManagedSandboxDomainsOnly checks
+ *    if only managed sandbox domains are allowed (enterprise policy).
+ *
+ * 3. Select-based response: CustomSelect with options:
+ *    - "yes": Allow once (persistToSettings: false)
+ *    - "yes-dont-ask-again": Allow and persist (persistToSettings: true)
+ *    - "no": Deny
+ *
+ * 4. Analytics logging: logEvent with AnalyticsMetadata for permission
+ *    decision tracking.
+ *
+ * 5. PermissionDialog wrapper: Standard permission dialog layout.
+ *
+ * See: analysis/components/permissions/ — sandbox network access
+ */
 export type SandboxPermissionRequestProps = {
   hostPattern: NetworkHostPattern;
   onUserResponse: (response: {

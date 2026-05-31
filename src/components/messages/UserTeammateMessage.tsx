@@ -11,6 +11,36 @@ import { MessageResponse } from '../MessageResponse.js';
 import { tryRenderPlanApprovalMessage } from './PlanApprovalMessage.js';
 import { tryRenderShutdownMessage } from './ShutdownMessage.js';
 import { tryRenderTaskAssignmentMessage } from './TaskAssignmentMessage.js';
+
+/* ARCHITECTURE NOTE: UserTeammateMessage — teammate message parser/renderer (UserTeammateMessage.tsx:1-206)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Parses and renders teammate messages in multi-agent (swarm) mode. Handles
+ * the full teammate message protocol including shutdown, plan approval, and
+ * task assignment sub-types.
+ *
+ * Key patterns:
+ *
+ * 1. XML parsing: TEAMMATE_MSG_REGEX parses <teammate-message> tags with
+ *    attributes: teammate_id, color, summary. Supports multiple messages
+ *    in a single text block (global regex match).
+ *
+ * 2. Color-coded display: Each teammate has an assigned color (toInkColor)
+ *    for visual differentiation in the transcript. Ansi component renders
+ *    custom hex colors.
+ *
+ * 3. Sub-message routing: tryRenderShutdownMessage, tryRenderPlanApprovalMessage,
+ *    and tryRenderTaskAssignmentMessage detect and delegate to specialized
+ *    renderers for structured message types within teammate content.
+ *
+ * 4. Shutdown awareness: isShutdownApproved check for inline shutdown
+ *    handling within teammate messages.
+ *
+ * 5. MessageResponse wrapper: Results appear connected to the message above.
+ *
+ * 6. JSON parsing: jsonParse for structured content within teammate messages.
+ *
+ * See: analysis/components/messages/ — swarm teammate communication
+ */
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;

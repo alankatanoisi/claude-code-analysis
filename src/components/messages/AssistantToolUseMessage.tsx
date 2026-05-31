@@ -1,3 +1,77 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: AssistantToolUseMessage.tsx — Tool Use Block Renderer
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// AssistantToolUseMessage(...)
+// ────────────────────────────
+// Combines the "tool definition layer" (schema, naming, tag, transparent wrapper
+// semantics) with the "session state layer" (resolved/queued/permission waiting)
+// into the final visible state. Flow:
+// 1. Find tool definition via findToolByName
+// 2. Validate tool input via tool.inputSchema.safeParse
+// 3. Compute: isResolved, isQueued, isWaitingForPermission, isTransparentWrapper
+// 4. Transparent wrappers → "render only progress, no title line" special path
+// 5. Empty userFacingToolName → hidden directly
+// 6. Normal tools → left-side indicator/loader, tool name, parameter summary,
+//    optional tag, status lines for running/permission/classifier/queued
+//
+// renderToolUseMessage(...)
+// ─────────────────────────
+// Performs safeParse on input again, calls tool.renderToolUseMessage. If parsing
+// or rendering throws, calls logError and returns empty string. The outermost
+// message component does NOT fully trust the tool's own display — still performs
+// schema validation and exception fallback.
+//
+// renderToolUseProgressMessage(...)
+// ─────────────────────────────────
+// Filters progress messages for current toolUseID. Prioritizes tool's own
+// renderToolProgressMessage if available, otherwise falls back to generic
+// HookProgressMessage. In transcript mode, limits animation and display pacing.
+// The "in progress" line is NOT a hardcoded spinner — supports per-tool
+// progress semantic override.
+//
+// renderToolUseQueuedMessage(...)
+// ───────────────────────────────
+// Separates "sent but not yet executed" into a tool-customizable hint layer.
+// Calls tool's renderQueuedMessage, or shows nothing if the tool doesn't
+// define one.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: AssistantToolUseMessage — tool call rendering engine (AssistantToolUseMessage.tsx:1-408)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * The most complex leaf message component. Combines tool metadata with session
+ * state to produce the final visible tool call representation.
+ *
+ * Key patterns:
+ *
+ * 1. Tool resolution: findToolByName looks up the tool definition. Schema
+ *    validation (safeParse) ensures input integrity before rendering.
+ *
+ * 2. State computation: isResolved (tool_result received), isQueued (sent
+ *    but not executed), isWaitingForPermission (approval dialog showing),
+ *    isTransparentWrapper (tool wraps another tool's output).
+ *
+ * 3. Transparent wrappers: Some tools (like plan mode) are wrappers that
+ *    should render only progress indicators, not a full title line.
+ *
+ * 4. Progress rendering: Delegates to tool.renderToolProgressMessage when
+ *    available (per-tool semantic progress), falls back to HookProgressMessage
+ *    for generic hook events (PreToolUse, PostToolUse, etc.).
+ *
+ * 5. Error boundary: SentryErrorBoundary wraps the entire component.
+ *    renderToolUseMessage has its own try/catch — double protection against
+ *    tool rendering bugs corrupting the transcript.
+ *
+ * 6. Classifier checking: useIsClassifierChecking detects when the classifier
+ *    hook is evaluating tool permissions — shows a "checking..." indicator.
+ *
+ * 7. Loader animation: ToolUseLoader renders the spinning dot for in-progress
+ *    tools. shouldAnimate controls whether the animation runs.
+ *
+ * See: analysis/components/messages/ — core tool call display
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import type { ToolUseBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import React, { useMemo } from 'react';

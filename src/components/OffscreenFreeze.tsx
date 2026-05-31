@@ -6,6 +6,42 @@ type Props = {
   children: React.ReactNode;
 };
 
+/* ARCHITECTURE NOTE: OffscreenFreeze — scrollback performance optimization (OffscreenFreeze.tsx:1-44)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Freezes children when they scroll above the terminal viewport (into scrollback).
+ * Critical for preventing terminal reset storms from animated content (spinners,
+ * elapsed counters) that updates on a timer.
+ *
+ * Key patterns:
+ *
+ * 1. Freeze mechanism: When offscreen, returns the SAME ReactElement reference
+ *    cached during the last visible render. React's reconciler bails on identical
+ *    element refs → subtree never re-renders → zero diff → no terminal reset.
+ *
+ * 2. One-slot cache: useRef(children) caches the last visible children. First
+ *    re-render after scrolling back into view picks up live children. Content
+ *    updates normally while visible.
+ *
+ * 3. 'use no memo': Opt-out of React Compiler memoization — reading cached.current
+ *    in the return IS the entire freeze mechanism. Memoizing would defeat it.
+ *
+ * 4. Virtual list bypass: InVirtualListContext check disables freezing in virtual
+ *    scroll mode. ScrollBox clips inside the viewport so there's nothing to freeze.
+ *    Freezing also blocks click-to-expand in virtual mode.
+ *
+ * 5. useTerminalViewport: Provides isVisible boolean and ref for viewport detection.
+ *    Tracks which content is currently visible in the terminal.
+ *
+ * 6. Why this matters: log-update.ts cannot partially update rows that have scrolled
+ *    out. Any content change above the viewport forces a FULL terminal reset. For
+ *    timer-updating content, this produces a reset per tick → CPU peg at 100%.
+ *
+ * Used by: Messages.tsx (LogoHeader), MessageRow.tsx, CollapsedReadSearchContent,
+ * and many other components that render in the scrollable transcript area.
+ *
+ * See: analysis/components/ — scrollback performance
+ */
+
 /**
  * Freezes children when they scroll above the terminal viewport (into scrollback).
  *

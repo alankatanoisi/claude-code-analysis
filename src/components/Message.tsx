@@ -1,3 +1,79 @@
+// ============================================================================
+// CHAPTER 5 ANALYSIS: Message.tsx — Message Type Dispatcher
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// MessageImpl(...)
+// ────────────────
+// The message type dispatcher. Not responsible for complex business judgments,
+// only routes "standard message structures" to correct leaf components:
+//   - attachment → AttachmentMessage
+//   - assistant → AssistantMessageBlock (block-by-block rendering)
+//   - user → UserMessage
+//   - system / grouped / collapsed → corresponding specialized components
+//
+// UserMessage(...)
+// ────────────────
+// Determines whether it's text, image, or tool result based on the block/
+// attachment type in the user message. Routes to different UI for bash output,
+// memory input, teammate/channel messages, etc. Unifies all "user-side outputs"
+// into a consistent visible semantic.
+//
+// AssistantMessageBlock(...)
+// ──────────────────────────
+// Formal dispatcher for assistant content blocks. Also the landing point for
+// thinking visibility strategy. Routes:
+//   - tool_use → AssistantToolUseMessage
+//   - text → AssistantTextMessage
+//   - redacted_thinking / thinking → hidden when not in transcript mode and
+//     not verbose; thinking also compares thinkingBlockId, hiding old thinking
+//     in transcript mode
+//   - server_tool_use / advisor_tool_result → AdvisorMessage
+//   - Unknown blocks → logged as errors
+//
+// hasThinkingContent(m)
+// ─────────────────────
+// Short function directly used by areMessagePropsEqual to avoid "full re-render
+// of all non-thinking messages when lastThinkingBlockId changes."
+//
+// areMessagePropsEqual(prev, next)
+// ────────────────────────────────
+// Fine-grained performance comparison. Compares message.uuid, only cares about
+// lastThinkingBlockId when current message has thinking content, only re-renders
+// when latestBashOutputUUID changes, does fine-grained comparison of key display
+// items (transcript mode, containerWidth, verbose, etc.).
+// ============================================================================
+
+/* ARCHITECTURE NOTE: Message — type dispatcher to leaf components (Message.tsx:1-673)
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * Pure routing component. Switches on message.type and delegates to specialized
+ * leaf components. No business logic — just prop threading and conditional rendering.
+ *
+ * Key patterns:
+ *
+ * 1. Assistant messages: Maps over content blocks, creating an AssistantMessageBlock
+ *    for each one. thinkingBlockId = `${uuid}:${index}` for per-block tracking.
+ *
+ * 2. User messages: Maps over content params (text/image/tool_result). Image
+ *    indices tracked via imagePasteIds to handle paste ID conflicts across
+ *    --continue/--resume sessions.
+ *
+ * 3. System messages: Handles compact_boundary (hidden in fullscreen),
+ *    HISTORY_SNIP feature-gated snip markers, local_command (rendered as
+ *    UserTextMessage), and default SystemTextMessage.
+ *
+ * 4. Thinking visibility: lastThinkingBlockId from Messages.tsx identifies
+ *    the most recent thinking block. In transcript mode with hidePastThinking,
+ *    all older thinking blocks get hideInTranscript=true.
+ *
+ * 5. ExpandShellOutputProvider: Wraps user content when this message is the
+ *    latest bash output — enables click-to-expand for shell output blocks.
+ *
+ * Memo comparator (areMessagePropsEqual): Only bails when BOTH messages are
+ * static. Otherwise re-renders to catch streaming updates. The hasThinkingContent
+ * check prevents re-rendering non-thinking messages when lastThinkingBlockId changes.
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs';

@@ -33,6 +33,44 @@ import { SentryErrorBoundary } from '../SentryErrorBoundary.js';
 import { TokenWarning } from '../TokenWarning.js';
 import { SandboxPromptFooterHint } from './SandboxPromptFooterHint.js';
 
+/* ARCHITECTURE NOTE: Notifications — prompt-area alert aggregator (Notifications.tsx:1-332)
+ * ────────────────────────────────────────────────────────────────────────────────────────
+ * Aggregates all notification sources that render above/below the prompt input.
+ * This is the central notification hub for the input area.
+ *
+ * Key patterns:
+ *
+ * 1. Notification context: useNotifications() provides addNotification/removeNotification
+ *    for programmatic alert management. Notifications have priority levels and timeouts.
+ *
+ * 2. Multi-source aggregation: Reads from AppState, IDE connection status, voice state,
+ *    API key verification, auto-updater, MCP clients, token usage, and more.
+ *
+ * 3. Token warning: calculateTokenWarningState() + TokenWarning component shows
+ *    context window utilization warnings. doesMostRecentAssistantMessageExceed200k()
+ *    triggers high-token warnings.
+ *
+ * 4. Auto-updater: AutoUpdaterWrapper checks for CLI updates. FOOTER_TEMPORARY_STATUS_TIMEOUT=5000
+ *    controls how long temporary status messages display.
+ *
+ * 5. IDE status: IdeStatusIndicator shows IDE connection state (VS Code, JetBrains).
+ *    useIdeConnectionStatus + useIdeAtMentioned for IDE integration.
+ *
+ * 6. Memory usage: MemoryUsageIndicator shows process memory consumption.
+ *
+ * 7. Sandbox hint: SandboxPromptFooterHint shows sandbox-related prompts.
+ *
+ * 8. Voice indicator: feature('VOICE_MODE') gates VoiceIndicator component.
+ *    Conditional require() for DCE in external builds.
+ *
+ * 9. Claude AI limits: useClaudeAiLimits() checks rate limit utilization
+ *    (5-hour, 7-day windows) from claude.ai API.
+ *
+ * 10. Error boundary: SentryErrorBoundary wraps the entire component.
+ *
+ * See: analysis/components/PromptInput/ — notification aggregation
+ */
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 const VoiceIndicator: typeof import('./VoiceIndicator.js').VoiceIndicator = feature('VOICE_MODE') ? require('./VoiceIndicator.js').VoiceIndicator : () => null;
 /* eslint-enable @typescript-eslint/no-require-imports */

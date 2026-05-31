@@ -4,6 +4,28 @@ import { relative } from 'path';
 import React from 'react';
 import { Box, Text } from '../../ink.js';
 import { getCwd } from '../../utils/cwd.js';
+
+/* ARCHITECTURE NOTE: MemoryUpdateNotification — memory save notification (MemoryUpdateNotification.tsx:1-45)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────
+ * Shows notification when memory file is updated, with path shortening.
+ *
+ * Key patterns:
+ *
+ * 1. Path shortening: getRelativeMemoryPath computes both ~-relative
+ *    (from home) and ./-relative (from cwd) paths, returns the shorter.
+ *    Falls back to absolute path if neither applies.
+ *
+ * 2. Home detection: homedir() for ~ path resolution.
+ *    relative() from path module for cwd-relative paths.
+ *
+ * 3. Display: "Memory updated in {path} · /memory to edit" — directs
+ *    user to /memory command for further editing.
+ *
+ * 4. Used after memory save operations to confirm the update and show
+ *    where the memory was written.
+ *
+ * See: analysis/components/memory/ — memory notification
+ */
 export function getRelativeMemoryPath(path: string): string {
   const homeDir = homedir();
   const cwd = getCwd();

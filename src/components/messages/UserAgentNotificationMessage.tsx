@@ -4,6 +4,29 @@ import * as React from 'react';
 import { BLACK_CIRCLE } from '../../constants/figures.js';
 import { Box, Text, type TextProps } from '../../ink.js';
 import { extractTag } from '../../utils/messages.js';
+
+/* ARCHITECTURE NOTE: UserAgentNotificationMessage — agent status notifications (UserAgentNotificationMessage.tsx:1-83)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders agent lifecycle status notifications (completed, failed, killed).
+ *
+ * Key patterns:
+ *
+ * 1. Status color mapping: getStatusColor maps agent status to Ink colors:
+ *    - completed → "success" (green)
+ *    - failed → "error" (red)
+ *    - killed → "warning" (yellow)
+ *    - default → "text"
+ *
+ * 2. XML tag extraction: extractTag parses agent notification content
+ *    from the text block.
+ *
+ * 3. BLACK_CIRCLE figure constant as visual indicator.
+ *
+ * 4. Used for background agent execution notifications — informs the user
+ *    when a spawned agent finishes, fails, or is killed.
+ *
+ * See: analysis/components/messages/ — agent notification display
+ */
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;

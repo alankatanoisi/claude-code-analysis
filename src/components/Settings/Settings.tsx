@@ -11,6 +11,32 @@ import { Tabs, Tab } from '../design-system/Tabs.js';
 import { Status, buildDiagnostics } from './Status.js';
 import { Config } from './Config.js';
 import { Usage } from './Usage.js';
+
+/* ARCHITECTURE NOTE: Settings — settings dialog orchestrator (Settings.tsx:1-137)
+ * ───────────────────────────────────────────────────────────────────────────
+ * Main settings dialog with tabbed interface (Status, Config, Usage, Gates).
+ *
+ * Key patterns:
+ *
+ * 1. Tab management: useState for selectedTab, tabsHidden, configOwnsEsc,
+ *    gatesOwnsEsc — esc key ownership prevents conflicting close behavior.
+ *
+ * 2. Dynamic height: contentHeight = min(floor(rows * 0.8), 30) with
+ *    minimum of 15 rows. +1 row adjustment for modal context.
+ *
+ * 3. Modal awareness: useIsInsideModal + useModalOrTerminalSize for
+ *    responsive sizing in modal vs. fullscreen terminal.
+ *
+ * 4. Tab content: Status (diagnostics via Suspense), Config (settings),
+ *    Usage (token/credit tracking), Gates (feature flags).
+ *
+ * 5. Keybinding integration: useKeybinding + useExitOnCtrlCDWithKeybindings
+ *    for dialog dismissal.
+ *
+ * 6. Pane + Tabs: Design system primitives for dialog layout.
+ *
+ * See: analysis/components/Settings/ — settings dialog
+ */
 import type { LocalJSXCommandContext, CommandResultDisplay } from '../../commands.js';
 type Props = {
   onClose: (result?: string, options?: {

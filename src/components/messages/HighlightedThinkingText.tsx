@@ -7,6 +7,36 @@ import { Box, Text } from '../../ink.js';
 import { formatBriefTimestamp } from '../../utils/formatBriefTimestamp.js';
 import { findThinkingTriggerPositions, getRainbowColor, isUltrathinkEnabled } from '../../utils/thinking.js';
 import { MessageActionsSelectedContext } from '../messageActions.js';
+
+/* ARCHITECTURE NOTE: HighlightedThinkingText — thinking trigger highlighter (HighlightedThinkingText.tsx:1-162)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders user prompt text with thinking trigger positions highlighted
+ * using rainbow colors. Used to show where thinking was triggered in
+ * the user's message.
+ *
+ * Key patterns:
+ *
+ * 1. Thinking trigger detection: findThinkingTriggerPositions(text) scans
+ *    the prompt text for thinking-related keywords/phrases and returns
+ *    their positions.
+ *
+ * 2. Rainbow coloring: getRainbowColor assigns colors to each thinking
+ *    trigger position for visual differentiation.
+ *
+ * 3. Ultrathink support: isUltrathinkEnabled detects if ultrathink mode
+ *    is active for enhanced thinking trigger display.
+ *
+ * 4. Brief layout: useBriefLayout toggles between compact and full display.
+ *    formatBriefTimestamp for timestamp formatting.
+ *
+ * 5. Selection awareness: MessageActionsSelectedContext for background
+ *    color. Queued message context (useQueuedMessage) for queue state.
+ *
+ * 6. Pointer color: isSelected ? "suggestion" : "subtle" — adapts
+ *    the thinking trigger marker color based on selection state.
+ *
+ * See: analysis/components/messages/ — thinking trigger highlighting
+ */
 type Props = {
   text: string;
   useBriefLayout?: boolean;

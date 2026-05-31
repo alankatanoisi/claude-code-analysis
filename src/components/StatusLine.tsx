@@ -27,6 +27,48 @@ import { getCurrentSessionTitle } from '../utils/sessionStorage.js';
 import { doesMostRecentAssistantMessageExceed200k, getCurrentUsage } from '../utils/tokens.js';
 import { getCurrentWorktreeSession } from '../utils/worktree.js';
 import { isVimModeEnabled } from './PromptInput/utils.js';
+
+/* ARCHITECTURE NOTE: StatusLine — session status bar (StatusLine.tsx:1-324)
+ * ─────────────────────────────────────────────────────────────────────────
+ * Displays session metadata (model, permission mode, cwd, token usage, cost)
+ * in a configurable status line above the prompt input.
+ *
+ * Key patterns:
+ *
+ * 1. Visibility gate: statusLineShouldDisplay() returns false in assistant mode
+ *    (KAIROS active) because statusline fields reflect the REPL/daemon process,
+ *    not the agent child. Otherwise checks settings.statusLine preference.
+ *
+ * 2. Status line command input: buildStatusLineCommandInput() assembles all
+ *    session state into a StatusLineCommandInput object for hook execution.
+ *    Includes permission mode, token usage, context window, rate limits,
+ *    session ID, worktree session, and more.
+ *
+ * 3. Token tracking: getTotalInputTokens/TotalOutputTokens/TotalCost from
+ *    cost-tracker.js. getCurrentUsage() for session-level token counts.
+ *    getContextWindowForModel() + calculateContextPercentages() for context
+ *    utilization.
+ *
+ * 4. Rate limits: getRawUtilization() checks 5-hour and 7-day utilization
+ *    windows from claude.ai API. resets_at timestamps for limit recovery.
+ *
+ * 5. Model info: useMainLoopModel() + getRuntimeMainLoopModel() for current
+ *    model display. renderModelName() for formatted model name string.
+ *
+ * 6. Session metadata: getSessionId(), getCurrentSessionTitle(), getCwd(),
+ *    getOriginalCwd(), getIsRemoteMode() for session context.
+ *
+ * 7. Hook integration: createBaseHookInput() + executeStatusLineCommand()
+ *    allow status line to trigger hook commands (e.g., context window check).
+ *
+ * 8. Vim mode: isVimModeEnabled() affects status line display.
+ *
+ * 9. Trust dialog: checkHasTrustDialogAccepted() for security status.
+ *
+ * 10. Analytics: logEvent() for status line interactions.
+ *
+ * See: analysis/components/04-component-index.md §2.1
+ */
 export function statusLineShouldDisplay(settings: ReadonlySettings): boolean {
   // Assistant mode: statusline fields (model, permission mode, cwd) reflect the
   // REPL/daemon process, not what the agent child is actually running. Hide it.

@@ -1,3 +1,64 @@
+// ============================================================================
+// CHAPTER 5 ANALYSIS: MessageRow.tsx — Message Row Orchestrator
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// hasContentAfterIndex(messages, index, tools, streamingToolUseIDs)
+// ─────────────────────────────────────────────────────────────────
+// Scans forward from index+1 to check if any "real" content follows. Used to
+// decide whether a collapsed read/search group should stay in its active state
+// (grey dot, present-tense "Reading…") while the query is loading. Skips:
+// - Assistant thinking / redacted_thinking
+// - Collapsible read/search tool_use blocks
+// - Non-collapsible streaming tool_use (briefly avoids finalizing read group)
+// - System / attachment messages
+// - User tool_result blocks
+// - Transient grouped collapsible tool_use messages
+// Returns true once real content is encountered.
+//
+// MessageRowImpl(...)
+// ───────────────────
+// "State pre-computation layer before rendering a single message." Determines
+// if the current message is grouped/collapsed type, computes isActiveCollapsedGroup,
+// extracts displayMsg, gets progressMessagesForMessage, calls shouldRenderStatic,
+// and computes shouldAnimate based on inProgressToolUseIDs.
+//
+// areMessageRowPropsEqual(prev, next)
+// ───────────────────────────────────
+// Performance-critical function. Only returns false when it truly affects the
+// display of the current row. Avoids re-rendering the entire transcript at the
+// row level on every global message change. This is an important part of the
+// rendering freeze strategy.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: MessageRow — per-row adapter layer (MessageRow.tsx:1-416)
+ * ───────────────────────────────────────────────────────────────────────────
+ * Sits between Messages.tsx's renderableMessages array and the Message.tsx
+ * type dispatcher. Key responsibilities:
+ *
+ * 1. State pre-computation: Determines isGrouped/isCollapsed, extracts
+ *    displayMsg from collapsed groups, looks up progress messages, calls
+ *    shouldRenderStatically to decide if the subtree can skip updates.
+ *
+ * 2. Animation gate: shouldAnimate is true when any tool in this message
+ *    is in inProgressToolUseIDs. Controls the spinner/dot animation.
+ *
+ * 3. Metadata layout: In transcript mode, assistant messages with text
+ *    content get a timestamp + model footer (MessageTimestamp + MessageModel).
+ *    Messages without metadata skip the wrapper Box for layout efficiency.
+ *
+ * 4. OffscreenFreeze: Wraps the message subtree to prevent Ink from
+ *    re-rendering offscreen content during terminal scroll.
+ *
+ * 5. Custom memo comparator (areMessageRowPropsEqual): Only re-renders
+ *    when message reference changes, screen mode changes, verbose toggles,
+ *    or the message is still "in flight" (streaming/unresolved).
+ *
+ * Performance: hasContentAfterIndex is exported so Messages.tsx can compute
+ * it once per message and pass as a boolean prop — avoids pinning the full
+ * renderableMessages array in React Compiler's memoCache (~1-2MB/session).
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import type { Command } from '../commands.js';

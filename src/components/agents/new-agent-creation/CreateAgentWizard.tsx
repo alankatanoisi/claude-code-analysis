@@ -17,6 +17,36 @@ import { ModelStep } from './wizard-steps/ModelStep.js';
 import { PromptStep } from './wizard-steps/PromptStep.js';
 import { ToolsStep } from './wizard-steps/ToolsStep.js';
 import { TypeStep } from './wizard-steps/TypeStep.js';
+
+/* ARCHITECTURE NOTE: CreateAgentWizard — agent creation flow (CreateAgentWizard.tsx:1-97)
+ * ───────────────────────────────────────────────────────────────────────────────────
+ * Array-driven wizard for creating new agents. Steps are dynamically built,
+ * not hardcoded pages.
+ *
+ * Key patterns:
+ *
+ * 1. Dynamic step array: Steps are constructed as closure functions that
+ *    capture props (existingAgents, tools). This allows conditional step
+ *    insertion based on runtime state.
+ *
+ * 2. Conditional steps: MemoryStep only inserted when isAutoMemoryEnabled().
+ *    This keeps the wizard flow clean when auto-memory is disabled.
+ *
+ * 3. Step sequence: TypeStep → DescriptionStep → PromptStep → ModelStep →
+ *    ToolsStep → ColorStep → LocationStep → MethodStep → GenerateStep →
+ *    MemoryStep (optional) → ConfirmStep.
+ *
+ * 4. WizardProvider integration: Passes the steps array to WizardProvider
+ *    which manages navigation, state, and completion callbacks.
+ *
+ * 5. ConfirmStepWrapper: Wraps the final step for confirmation UI before
+ *    agent creation is committed.
+ *
+ * 6. Completion callback: onComplete(message) receives a summary message
+ *    to display after successful agent creation.
+ *
+ * See: analysis/components/06-function-level-platform-walkthrough.md §4.3
+ */
 type Props = {
   tools: Tools;
   existingAgents: AgentDefinition[];

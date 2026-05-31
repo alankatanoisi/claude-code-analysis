@@ -1,3 +1,53 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: MCPSettings.tsx — MCP Console State Machine
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// MCPSettings(...)
+// ────────────────
+// "The MCP console's state machine builder and server metadata aggregator."
+// Reads mcp and agentDefinitions from AppState. Calls extractAgentMcpServers
+// to get agent-bound MCP servers. Filters mcp.clients to displayable clients.
+//
+// In an effect, executes prepareServers():
+// 1. Iterates each client
+// 2. Determines transport type (sse/http/stdio/claudeai-proxy)
+// 3. For sse/http: uses ClaudeAuthProvider.tokens() to probe auth status
+// 4. Combines session ingress token and "connected and has tools" to infer
+//    isAuthenticated
+// 5. Writes to servers state
+// If both servers and agentMcpServers are empty, calls onComplete with an
+// empty config message. Then switches between list / server-menu / server-tools
+// views via viewState.type.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: MCPSettings — MCP server management console (MCPSettings.tsx:1-421)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * State machine for managing Model Context Protocol (MCP) servers. Handles
+ * server discovery, auth probing, tool listing, and agent-server binding.
+ *
+ * Key patterns:
+ *
+ * 1. Transport detection: Classifies servers by transport type (sse/http/
+ *    stdio/claudeai-proxy). Each type has different auth and connection logic.
+ *
+ * 2. Auth probing: For SSE/HTTP servers, uses ClaudeAuthProvider.tokens() to
+ *    probe authentication status. Combines session ingress auth token with
+ *    "connected and has tools" signal to infer isAuthenticated.
+ *
+ * 3. Agent-server binding: extractAgentMcpServers finds MCP servers bound to
+ *    specific agents. These are displayed separately from global servers.
+ *
+ * 4. View state machine: list → server-menu (stdio) → server-tools, or
+ *    list → remote-server-menu (sse/http) → server-tools. Each view has
+ *    its own sub-component (MCPListPanel, MCPStdioServerMenu, etc.).
+ *
+ * 5. Async server preparation: prepareServers() runs in a useEffect with
+ *    cancellation guard. Probes all clients in parallel via Promise.all.
+ *
+ * See: analysis/components/03-platform-components.md §4
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import React, { useEffect, useMemo } from 'react';
 import type { CommandResultDisplay } from '../../commands.js';

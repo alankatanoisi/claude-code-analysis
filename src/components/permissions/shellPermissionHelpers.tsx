@@ -4,6 +4,34 @@ import { getOriginalCwd } from '../../bootstrap/state.js';
 import { Text } from '../../ink.js';
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js';
 import { permissionRuleExtractPrefix } from '../../utils/permissions/shellRuleMatching.js';
+
+/* ARCHITECTURE NOTE: shellPermissionHelpers — shell permission display utilities (shellPermissionHelpers.tsx:1-164)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Shared utilities for formatting shell/bash permission request displays.
+ *
+ * Key patterns:
+ *
+ * 1. commandListDisplay: Formats command names for display:
+ *    - 0: empty string
+ *    - 1: "cmd" (bold)
+ *    - 2: "cmd1 and cmd2" (bold)
+ *    - 3+: "cmd1, cmd2, and cmd3" (bold, Oxford comma)
+ *
+ * 2. commandListDisplayTruncated: Falls back to "similar" if plain text
+ *    representation exceeds 50 chars — prevents dialog overflow.
+ *
+ * 3. formatPathList: Extracts directory basenames from paths and formats
+ *    with separator (e.g., "dir1/, dir2/, and dir3/").
+ *
+ * 4. permissionRuleExtractPrefix: Extracts prefix patterns from permission
+ *    rules for shell command matching.
+ *
+ * 5. getOriginalCwd: Provides context for relative path resolution.
+ *
+ * 6. PermissionUpdate type: Schema for permission rule updates.
+ *
+ * See: analysis/components/permissions/ — shell permission formatting
+ */
 function commandListDisplay(commands: string[]): ReactNode {
   switch (commands.length) {
     case 0:

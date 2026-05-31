@@ -12,6 +12,46 @@ import type { TextHighlight } from '../utils/textHighlighting.js';
 import { BaseTextInput } from './BaseTextInput.js';
 import { hueToRgb } from './Spinner/utils.js';
 
+/* ARCHITECTURE NOTE: TextInput — primary text input with voice waveform (TextInput.tsx:1-124)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * The main text input component for the prompt. Wraps BaseTextInput with
+ * voice recording waveform visualization and clipboard image hints.
+ *
+ * Key patterns:
+ *
+ * 1. Voice waveform: During voice recording, displays a mini waveform cursor
+ *    using block characters (▁▂▃▄▅▆▇█). Audio levels from useVoiceState are
+ *    smoothed via EMA (SMOOTH=0.7) and boosted (LEVEL_BOOST=1.8) for visual
+ *    clarity.
+ *
+ * 2. Animation gating: useAnimationFrame(50ms) only runs when voice is
+ *    recording AND reducedMotion is false. Prevents unnecessary animation
+ *    overhead.
+ *
+ * 3. Silence threshold: SILENCE_THRESHOLD=0.15 determines when the cursor
+ *    turns grey (ambient mic noise) vs. colored (speech). computeLevel
+ *    returns sqrt(rms/2000), speech starts around 0.2+.
+ *
+ * 4. Clipboard image hint: useClipboardImageHint shows a hint when terminal
+ *    regains focus and clipboard has an image. Triggers paste workflow.
+ *
+ * 5. Accessibility: CLAUDE_CODE_ACCESSIBILITY env gate for accessibility
+ *    features. Hoisted to mount-time to avoid per-keystroke recomputation.
+ *
+ * 6. Theme integration: useTheme() for color resolution. hueToRgb() for
+ *    waveform color cycling.
+ *
+ * 7. Settings: useSettings() for prefersReducedMotion preference.
+ *
+ * 8. Feature gating: feature('VOICE_MODE') for voice-related hooks.
+ *    Conditional require() for DCE in external builds.
+ *
+ * 9. BaseTextInput: Delegates core text editing to BaseTextInput (cursor
+ *    management, selection, highlighting, IME support).
+ *
+ * See: analysis/components/04-component-index.md §2.2
+ */
+
 // Block characters for waveform bars: space (silent) + 8 rising block elements.
 const BARS = ' \u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
 

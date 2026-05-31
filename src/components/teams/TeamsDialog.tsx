@@ -1,3 +1,67 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: TeamsDialog.tsx — Swarm Console / Multi-Agent Control Plane
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// TeamsDialog(...)
+// ────────────────
+// "The main state machine of the swarm console." Registers useRegisterOverlay,
+// uses dialogLevel to distinguish teammateList from teammateDetail views. Uses
+// getTeammateStatuses and polling (1s interval via useInterval) to refresh
+// state. Uses useInput to handle: left/right/up/down navigation, Enter to drill
+// down or jump to pane, k kill, s graceful shutdown, h/H hide/show, p prune.
+//
+// sendModeChangeToTeammate(teammateName, teamName, targetMode)
+// ─────────────────────────────────────────────────────────────
+// "Dual-write" strategy: first calls setMemberMode to change config (UI immediately
+// visible), then constructs a mode-set request and sends via writeToMailbox to
+// the remote agent to update runtime state. This ensures both persisted config
+// and active runtime are in sync.
+//
+// cycleTeammateMode(...) / cycleAllTeammateModes(...)
+// ───────────────────────────────────────────────────
+// cycleTeammateMode: Constructs minimal ToolPermissionContext from current mode,
+// calls getNextPermissionMode, then sends the change.
+// cycleAllTeammateModes: If modes are inconsistent, resets all to 'default'.
+// If consistent, switches all to the next mode uniformly. Uses batched config
+// writes (setMultipleMemberModes) then sends individual mailbox messages.
+// Solves team permission mode consistency: either reset together or advance
+// to the next level together.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: TeamsDialog — multi-agent swarm console (TeamsDialog.tsx:1-746)
+ * ────────────────────────────────────────────────────────────────────────────────
+ * Control plane for agent swarms (multi-agent collaboration). Provides a
+ * tmux-based interface for monitoring and managing teammate agents.
+ *
+ * Key patterns:
+ *
+ * 1. Dual-write strategy: sendModeChangeToTeammate writes to both persisted
+ *    config (setMemberMode) AND runtime state (writeToMailbox). This ensures
+ *    UI reflects changes immediately while the remote agent syncs asynchronously.
+ *
+ * 2. Polling refresh: useInterval at 1s calls getTeammateStatuses to refresh
+ *    teammate state. Status includes pane assignment, mode, health, task count.
+ *
+ * 3. Permission mode cycling: cycleTeammateMode advances through permission
+ *    modes (default → auto-approve → read-only). cycleAllTeammateModes
+ *    batch-resolves inconsistency — either reset all to default or advance
+ *    all uniformly.
+ *
+ * 4. Tmux integration: Uses tmux commands (IT2_COMMAND, TMUX_COMMAND) for
+ *    pane management. Swarm socket for inter-process communication.
+ *    ensureBackendsRegistered discovers available tmux/swarm backends.
+ *
+ * 5. Keyboard-driven UI: useInput handles j/k/arrow navigation, Enter to
+ *    drill down, k/s for kill/shutdown, h/H for hide/show, p for prune.
+ *    Raw keybindings (not useKeybindings) for direct dialog navigation.
+ *
+ * 6. Task management: unassignTeammateTasks reassigns tasks when a teammate
+ *    is removed. listTasks queries current task assignments.
+ *
+ * See: analysis/components/03-platform-components.md §5
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import { randomUUID } from 'crypto';
 import figures from 'figures';

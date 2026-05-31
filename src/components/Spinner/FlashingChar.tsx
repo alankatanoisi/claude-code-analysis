@@ -3,6 +3,28 @@ import * as React from 'react';
 import { Text, useTheme } from '../../ink.js';
 import { getTheme, type Theme } from '../../utils/theme.js';
 import { interpolateColor, parseRGB, toRGBColor } from './utils.js';
+
+/* ARCHITECTURE NOTE: FlashingChar — opacity-interpolated character (FlashingChar.tsx:1-61)
+ * ───────────────────────────────────────────────────────────────────────────────────
+ * Renders a character with color interpolated between base and shimmer
+ * based on flash opacity.
+ *
+ * Key patterns:
+ *
+ * 1. Color interpolation: interpolateColor(baseRGB, shimmerRGB, flashOpacity)
+ *    smoothly transitions between messageColor and shimmerColor.
+ *
+ * 2. Theme resolution: getTheme(themeName) + parseRGB for color extraction.
+ *    Falls back gracefully if theme colors can't be parsed.
+ *
+ * 3. Early return sentinel: Symbol.for("react.early_return_sentinel") with
+ *    labeled break for React compiler memoization when colors can't be
+ *    interpolated.
+ *
+ * 4. Used by: GlimmerMessage for flash animation effects.
+ *
+ * See: analysis/components/Spinner/ — flashing character
+ */
 type Props = {
   char: string;
   flashOpacity: number;

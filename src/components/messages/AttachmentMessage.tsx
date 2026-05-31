@@ -33,6 +33,39 @@ type Props = {
   verbose: boolean;
   isTranscriptMode?: boolean;
 };
+
+/* ARCHITECTURE NOTE: AttachmentMessage — mid-turn input channel (AttachmentMessage.tsx:1-536)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Renders attachment messages that arrive mid-turn while a tool is executing.
+ * These are "drained" from the input stream by query.ts and delivered as
+ * attachment-type messages on the next turn.
+ *
+ * Key patterns:
+ *
+ * 1. Type-based dispatch: Switches on attachment.type to render the appropriate
+ *    UI for each attachment kind (teammate_mailbox, task_assignment, diagnostics,
+ *    image, text, queued_command, etc.).
+ *
+ * 2. Teammate mailbox filtering: Filters out idle_notification and
+ *    teammate_terminated messages before rendering — these are hidden in the
+ *    UI to avoid clutter. Shutdown-approved messages are also filtered.
+ *
+ * 3. Null rendering: Some attachment types return null (hook_success,
+ *    hook_additional_context, hook_cancelled). These are filtered out in
+ *    Messages.tsx BEFORE counting/slicing so they don't inflate message counts.
+ *    See nullRenderingAttachments.ts for the full list.
+ *
+ * 4. Demo mode: feature('EXPERIMENTAL_SKILL_SEARCH') gates IS_DEMO env check.
+ *    Demo attachments render differently for showcase scenarios.
+ *
+ * 5. Diagnostics: DiagnosticsDisplay renders structured diagnostic data
+ *    (lint errors, type errors) from tool results.
+ *
+ * 6. Plan approval: tryRenderPlanApprovalMessage detects plan approval
+ *    requests in teammate messages and renders the appropriate UI.
+ *
+ * See: analysis/components/messages/ — attachment handling
+ */
 export function AttachmentMessage({
   attachment,
   addMargin,

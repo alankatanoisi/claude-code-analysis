@@ -1,3 +1,24 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: BackgroundTask.tsx — Background State Reducer
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// BackgroundTask(...)
+// ───────────────────
+// "The background state reducer" — compresses structurally complex task states
+// into a single scannable line, keeping the tasks panel readable even in
+// high-concurrency agent scenarios. Dispatches by task.type:
+// - local_bash → ShellProgress (command/description + status)
+// - remote_agent → RemoteSessionProgress for reviews, TaskStatusText otherwise
+// - local_agent → TaskStatusText with description
+// - in_process_teammate → describeTeammateActivity
+// - local_workflow → TaskStatusText
+// - monitor_mcp → TaskStatusText
+// - dream → TaskStatusText
+// Uniformly applies truncate(..., activityLimit, true) across all paths to
+// prevent background task names from overflowing the terminal.
+// ============================================================================
+
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Text } from 'src/ink.js';

@@ -1,3 +1,48 @@
+// ============================================================================
+// CHAPTER 5 ANALYSIS: VirtualMessageList.tsx — Virtual Scrolling + Search + Highlight
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// defaultExtractSearchText(msg)
+// ──────────────────────────────
+// Fallback text extractor for transcript search. Caches lowered result of
+// renderableSearchText(msg) via WeakMap. Without it, each search term input
+// would require re-doing text lowering from scratch.
+//
+// stickyPromptText(msg) / computeStickyPromptText(msg)
+// ─────────────────────────────────────────────────────
+// stickyPromptText uses WeakMap for caching. computeStickyPromptText only
+// recognizes two types of "real user input": text block in a user message,
+// and attachment.type === 'queued_command' mid-turn user input. First strips
+// system reminders, then filters out XML wrapper content and pseudo-input.
+// These directly support the STICKY PROMPT HEADER — showing which historical
+// user prompt is pinned at the top during scrolling.
+//
+// VirtualMessageList(...)
+// ───────────────────────
+// Not a simple list component but a composite of:
+// - Virtual scroll controller (useVirtualScroll → range, offsets, scrollToIndex)
+// - Navigation controller (useImperativeHandle cursorNavRef → cursor movement)
+// - Search highlight controller (jumpState, scanRequestRef)
+// Maintains keysRef with incremental appending for append-only message streams.
+//
+// VirtualItem(...)
+// ────────────────
+// Performance optimization wrapper. Wraps each message with a stable event
+// wrapper, reduces per-item closure allocation, binds measureRef(k), hover/click
+// behaviors related to virtual list to individual items.
+//
+// StickyTracker(...)
+// ──────────────────
+// Subscribes to scroll state via useSyncExternalStore(subscribe, snapshot).
+// Calculates current visible window top based on scrollTop + pendingDelta.
+// Finds firstVisible in reverse from mounted range, then searches backward for
+// nearest real user input that can serve as a sticky prompt. Filters out
+// duplicates where "the prompt text is still visible at top of screen."
+// Derives "which historical prompt should be displayed at top" from scrolling
+// behavior in real time — part of transcript readability design.
+// ============================================================================
+
 import { c as _c } from "react/compiler-runtime";
 import type { RefObject } from 'react';
 import * as React from 'react';
@@ -10,6 +55,40 @@ import { Box } from '../ink.js';
 import type { RenderableMessage } from '../types/message.js';
 import { TextHoverColorContext } from './design-system/ThemedText.js';
 import { ScrollChromeContext } from './FullscreenLayout.js';
+
+/* ARCHITECTURE NOTE: Terminal-optimized virtual list (VirtualMessageList.tsx:1-1082)
+ * ──────────────────────────────────────────────────────────────────────────────────
+ * Split from Messages.tsx so useVirtualScroll can be called unconditionally
+ * (rules-of-hooks). Messages.tsx conditionally renders either this or a
+ * plain .map() based on virtualScrollRuntimeGate.
+ *
+ * Key subsystems:
+ *
+ * 1. useVirtualScroll integration: Height-cached virtual scrolling with
+ *    Float64Array offsets. Items mount on-demand; unmeasured items fall
+ *    through with assumed visibility.
+ *
+ * 2. Incremental key array: Streaming appends one message at a time.
+ *    Instead of rebuilding the full string array O(n) per message (~1MB
+ *    churn at 27k), uses append-only delta push when prefix matches.
+ *
+ * 3. Search engine: Two-phase jump + scan with phantom detection.
+ *    Positions are message-relative from scanElement (DOM subtree paint).
+ *    Prefix sum array enables global occurrence counting for the badge.
+ *
+ * 4. StickyTracker: Separate component subscribing to scroll at finer
+ *    granularity than SCROLL_QUANTUM=40. Tracks the last user-prompt
+ *    scrolled above viewport and fires onChange. Split to avoid per-wheel
+ *    Yoga relayouts in the main list.
+ *
+ * 5. Cursor navigation: MessageActionsNav imperative handle for shift+↑/↓
+ *    navigation between messages. Selects by UUID, not index.
+ *
+ * Performance: VirtualItem wrappers use stable click/hover handlers (refs)
+ * to prevent closure allocation during fast scroll (was 16% of GC time).
+ *
+ * See: analysis/components/02-core-interaction-components.md §3
+ */
 
 // Rows of breathing room above the target when we scrollTo.
 const HEADROOM = 3;
@@ -29,6 +108,25 @@ function defaultExtractSearchText(msg: RenderableMessage): string {
   fallbackLowerCache.set(msg, lowered);
   return lowered;
 }
+
+/* ARCHITECTURE NOTE: Sticky prompt extraction (VirtualMessageList.tsx:115-160)
+ * ────────────────────────────────────────────────────────────────────────────
+ * stickyPromptText extracts the text of a "real" user prompt for the
+ * sticky header that follows the user as they scroll. Two message shapes
+ * land here:
+ *
+ * 1. NormalizedUserMessage — normal prompts (text block, not meta).
+ * 2. AttachmentMessage with queued_command — prompts sent mid-turn while
+ *    a tool was executing (drained as attachments on the next turn).
+ *
+ * System reminders are stripped before checking — they get prepended to
+ * stored text for Claude's context but aren't what the user typed.
+ * Prompts starting with '<' (XML-wrapped payloads like <bash-stdout>,
+ * <command-message>, <teammate-message>) are rejected.
+ *
+ * WeakMap cache self-GCs on compaction/clear. The walk (StickyTracker,
+ * per-scroll-tick) calls this 5-50+ times with the SAME messages.
+ */
 export type StickyPrompt = {
   text: string;
   scrollTo: () => void;
@@ -194,6 +292,22 @@ type VirtualItemProps = {
 // verbose). Memoing with a comparator that ignores renderItem would use a
 // STALE closure on bail (wrong selection highlight, stale verbose). Including
 // renderItem in the comparator defeats memo since it's fresh each render.
+
+/* ARCHITECTURE NOTE: VirtualItem — per-item wrapper with stable handlers (VirtualMessageList.tsx:197-288)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Wraps each rendered message with:
+ * - measureRef: Yoga layout height measurement anchor
+ * - Stable click/hover handlers (onClickK/onEnterK/onLeaveK) that
+ *   dispatch through refs to avoid closure identity changes
+ * - TextHoverColorContext for hover state propagation
+ *
+ * The key optimization: stable handler identities mean VirtualItem's
+ * props don't change for unchanged items → React Compiler memo cache
+ * bails → ~35 of 60 mounted items skip createElement per frame.
+ *
+ * NOT React.memo'd because renderItem captures changing state.
+ * A custom comparator ignoring renderItem would use stale closures.
+ */
 function VirtualItem(t0) {
   const $ = _c(30);
   const {
@@ -869,6 +983,29 @@ export function VirtualMessageList({
     </>;
 }
 const NOOP_UNSUB = () => {};
+
+/* ARCHITECTURE NOTE: StickyTracker — fine-grained scroll subscriber (VirtualMessageList.tsx:873-1081)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────
+ * Effect-only child that tracks the last user-prompt scrolled above the
+ * viewport top and fires onChange when it changes.
+ *
+ * Why a separate component (not a hook in VirtualMessageList)?
+ * - The list needs coarse quantum (SCROLL_QUANTUM=40) to avoid per-wheel
+ *   Yoga relayouts. StickyTracker is just a walk + comparison and can
+ *   afford to run every tick.
+ * - When it re-renders alone, the list's reconciled output is unchanged —
+ *   no Yoga work. Without this split, the header lags by ~one turn.
+ *
+ * State machine for click-jump suppression:
+ *   none → armed (click) → force (next render) → none (fired)
+ * This prevents the sticky header from reappearing during click-to-scroll.
+ *
+ * Uses useSyncExternalStore with unquantized scrollTop+delta snapshot
+ * so every scroll action triggers re-render of THIS component only.
+ *
+ * First paragraph only shown in sticky header (split on blank line).
+ * Text capped at STICKY_TEXT_CAP=500 chars.
+ */
 
 /**
  * Effect-only child that tracks the last user-prompt scrolled above the

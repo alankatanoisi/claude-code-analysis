@@ -12,6 +12,36 @@ import { Tab, Tabs, useTabHeaderFocus } from '../design-system/Tabs.js';
 import { SandboxConfigTab } from './SandboxConfigTab.js';
 import { SandboxDependenciesTab } from './SandboxDependenciesTab.js';
 import { SandboxOverridesTab } from './SandboxOverridesTab.js';
+
+/* ARCHITECTURE NOTE: SandboxSettings — sandbox configuration dialog (SandboxSettings.tsx:1-296)
+ * ────────────────────────────────────────────────────────────────────────────────────────
+ * Tabbed settings dialog for sandbox configuration (Config, Dependencies, Overrides).
+ *
+ * Key patterns:
+ *
+ * 1. Sandbox mode: 'auto-allow' | 'regular' | 'disabled' — three operational
+ *    modes controlled by Select component.
+ *
+ * 2. Current state detection: SandboxManager.isSandboxingEnabled() and
+ *    isAutoAllowBashIfSandboxedEnabled() for displaying current config.
+ *
+ * 3. Dependency checking: SandboxDependencyCheck with warnings array.
+ *    hasWarnings flag for visual indicator.
+ *
+ * 4. Three tabs:
+ *    - ConfigTab: Main sandbox settings (mode, network, etc.)
+ *    - DependenciesTab: Dependency verification and fixes
+ *    - OverridesTab: Custom sandbox overrides
+ *
+ * 5. Network settings: allowAllUnixSockets from settings.sandbox.network.
+ *
+ * 6. Settings access: getSettings_DEPRECATED for current sandbox config.
+ *    SandboxManager for runtime state queries.
+ *
+ * 7. Pane + Tabs: Design system primitives for dialog layout.
+ *
+ * See: analysis/components/sandbox/ — sandbox settings
+ */
 type Props = {
   onComplete: (result?: string, options?: {
     display?: CommandResultDisplay;

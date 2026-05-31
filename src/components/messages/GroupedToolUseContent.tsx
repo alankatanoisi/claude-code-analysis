@@ -3,6 +3,37 @@ import * as React from 'react';
 import { filterToolProgressMessages, findToolByName, type Tools } from '../../Tool.js';
 import type { GroupedToolUseMessage } from '../../types/message.js';
 import type { buildMessageLookups } from '../../utils/messages.js';
+
+/* ARCHITECTURE NOTE: GroupedToolUseContent — batched tool call renderer (GroupedToolUseContent.tsx:1-58)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders grouped tool calls where multiple tool_use blocks are batched together
+ * (e.g., parallel file reads, concurrent bash commands).
+ *
+ * Key patterns:
+ *
+ * 1. Tool delegation: findToolByName looks up the tool definition. If the tool
+ *    doesn't define renderGroupedToolUse, returns null (falls back to individual
+ *    rendering).
+ *
+ * 2. Result mapping: Builds resultsByToolUseId Map from message.results,
+ *    correlating tool_result blocks with their corresponding tool_use blocks
+ *    via tool_use_id.
+ *
+ * 3. Status aggregation: For each tool in the group, computes isResolved,
+ *    isError, isInProgress using lookups from buildMessageLookups.
+ *
+ * 4. Progress filtering: filterToolProgressMessages extracts progress events
+ *    specific to each tool_use_id.
+ *
+ * 5. Animation gating: shouldAnimate && anyInProgress — animation only runs
+ *    when at least one tool in the group is still in progress.
+ *
+ * 6. Tool-specific rendering: tool.renderGroupedToolUse(toolUsesData, opts)
+ *    delegates to the tool's own grouped display logic (e.g., parallel read
+ *    summary, batch command output).
+ *
+ * See: analysis/components/messages/ — grouped tool call display
+ */
 type Props = {
   message: GroupedToolUseMessage;
   tools: Tools;

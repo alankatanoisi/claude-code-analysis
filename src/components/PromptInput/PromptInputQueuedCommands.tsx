@@ -13,6 +13,35 @@ import { jsonParse } from '../../utils/slowOperations.js';
 import { Message } from '../Message.js';
 const EMPTY_SET = new Set<string>();
 
+/* ARCHITECTURE NOTE: PromptInputQueuedCommands — mid-turn command display (PromptInputQueuedCommands.tsx:1-117)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders queued commands that arrived while a tool was executing. Commands
+ * are drained from the input stream and displayed as synthetic messages below
+ * the prompt input.
+ *
+ * Key patterns:
+ *
+ * 1. Idle notification filtering: isIdleNotification() detects idle_notification
+ *    JSON payloads and filters them out entirely — processed silently without
+ *    showing to the user.
+ *
+ * 2. Task notification capping: MAX_VISIBLE_NOTIFICATIONS=3 limits how many
+ *    task completion notifications show. Excess notifications are collapsed
+ *    into a single "+N more tasks completed" overflow message.
+ *
+ * 3. Synthetic message creation: createUserMessage() + normalizeMessages()
+ *    wraps queued command values into synthetic NormalizedUserMessage objects
+ *    that render through the standard Message component pipeline.
+ *
+ * 4. QueuedMessageProvider: Wraps child components to provide queued command
+ *    context for nested rendering.
+ *
+ * 5. Visibility filtering: isQueuedCommandVisible() determines which commands
+ *    should render in the UI vs. which are internal-only.
+ *
+ * See: analysis/components/PromptInput/ — queued command display
+ */
+
 /**
  * Check if a command value is an idle notification that should be hidden.
  * Idle notifications are processed silently without showing to the user.

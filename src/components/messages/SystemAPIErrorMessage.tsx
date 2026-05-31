@@ -7,6 +7,32 @@ import type { SystemAPIErrorMessage } from 'src/types/message.js';
 import { useInterval } from 'usehooks-ts';
 import { CtrlOToExpand } from '../CtrlOToExpand.js';
 import { MessageResponse } from '../MessageResponse.js';
+
+/* ARCHITECTURE NOTE: SystemAPIErrorMessage — API error with retry countdown (SystemAPIErrorMessage.tsx:1-141)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders API error messages with retry attempt tracking and countdown timer.
+ *
+ * Key patterns:
+ *
+ * 1. Retry countdown: useInterval + countdownMs state tracks retry timing.
+ *    Shows "Retrying in Xs..." while waiting, "Retrying..." when done.
+ *
+ * 2. Hidden early retries: hidden = retryAttempt < 4 — first 3 retry
+ *    attempts are silently hidden to avoid noise. Only shows error UI
+ *    on the 4th+ retry attempt.
+ *
+ * 3. Error formatting: formatAPIError formats the raw API error into
+ *    a user-readable message.
+ *
+ * 4. Truncation: MAX_API_ERROR_CHARS=1000 prevents long API errors from
+ *    flooding the transcript.
+ *
+ * 5. Ctrl+O expand: CtrlOToExpand hint for truncated errors.
+ *
+ * 6. MessageResponse wrapper: Appears connected to the message above.
+ *
+ * See: analysis/components/messages/ — API error with retry
+ */
 const MAX_API_ERROR_CHARS = 1000;
 type Props = {
   message: SystemAPIErrorMessage;

@@ -2,6 +2,27 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Text } from '../../ink.js';
 import type { Theme } from '../../utils/theme.js';
+
+/* ARCHITECTURE NOTE: ShimmerChar — per-character shimmer effect (ShimmerChar.tsx:1-36)
+ * ────────────────────────────────────────────────────────────────────────────────
+ * Renders a single character with shimmer color highlighting.
+ *
+ * Key patterns:
+ *
+ * 1. Proximity-based highlighting: isHighlighted (index === glimmerIndex)
+ *    and isNearHighlight (Math.abs(index - glimmerIndex) === 1) determine
+ *    whether to use shimmerColor or messageColor.
+ *
+ * 2. Three-zone effect: Exact match gets full shimmer, adjacent characters
+ *    also get shimmer for a wider glow effect.
+ *
+ * 3. Used by: GlimmerMessage for per-character shimmer animation in
+ *    thinking/loading text.
+ *
+ * 4. Minimal component: 36 lines, pure function of props.
+ *
+ * See: analysis/components/Spinner/ — shimmer character
+ */
 type Props = {
   char: string;
   index: number;

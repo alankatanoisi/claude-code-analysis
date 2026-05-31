@@ -26,6 +26,39 @@ type Props = {
   isTranscriptMode?: boolean;
   timestamp?: string;
 };
+
+/* ARCHITECTURE NOTE: UserTextMessage — user text block dispatcher (UserTextMessage.tsx:1-275)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Routes user text blocks to specialized sub-components based on content patterns.
+ * The text may contain XML-wrapped payloads from various sources (bash output,
+ * commands, teammate messages, memory input, etc.).
+ *
+ * Key patterns:
+ *
+ * 1. XML tag detection: Uses extractTag() with known tag constants (TICK_TAG,
+ *    COMMAND_MESSAGE_TAG, TEAMMATE_MESSAGE_TAG, TASK_NOTIFICATION_TAG,
+ *    LOCAL_COMMAND_CAVEAT_TAG) to detect and route structured content.
+ *
+ * 2. Bash output detection: startswith('<bash-stdout') or '<bash-stderr' routes
+ *    to UserBashOutputMessage. Similarly for '<local-command-stdout/stderr'.
+ *
+ * 3. Suppressed content: TICK_TAG (checkmarks), LOCAL_COMMAND_CAVEAT_TAG, and
+ *    NO_CONTENT_MESSAGE all return null — they're internal markers not meant
+ *    for user display.
+ *
+ * 4. Plan content: planContent prop (separate from param.text) routes to
+ *    UserPlanMessage for plan-mode output.
+ *
+ * 5. Interruption detection: extractTag(INTERRUPT_MESSAGE) and
+ *    extractTag(INTERRUPT_MESSAGE_FOR_TOOL_USE) route to InterruptedByUser.
+ *
+ * 6. Swarm integration: isAgentSwarmsEnabled() gates teammate message and
+ *    channel message rendering.
+ *
+ * 7. Fallback: UserPromptMessage renders plain user text with the ❯ prefix.
+ *
+ * See: analysis/components/messages/ — user text routing
+ */
 export function UserTextMessage(t0) {
   const $ = _c(49);
   const {

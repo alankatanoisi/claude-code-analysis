@@ -31,6 +31,36 @@ const PREVIEW_CONTEXT_LINES = 4;
 const MAX_MATCHES_PER_FILE = 10;
 const MAX_TOTAL_MATCHES = 500;
 
+/* ARCHITECTURE NOTE: GlobalSearchDialog — workspace-wide ripgrep search (GlobalSearchDialog.tsx:1-343)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────
+ * Implements ctrl+shift+f / cmd+shift+f global search across the workspace
+ * using debounced ripgrep (rg) streaming.
+ *
+ * Key patterns:
+ *
+ * 1. Ripgrep streaming: ripGrepStream() pipes rg output directly into React
+ *    state. Bounded memory: MAX_MATCHES_PER_FILE=10, MAX_TOTAL_MATCHES=500.
+ *    AbortController cancels in-flight searches on query change or unmount.
+ *
+ * 2. Debounced search: DEBOUNCE_MS=100 prevents rg spawning on every keystroke.
+ *    Timeout cleared on new query or component unmount.
+ *
+ * 3. FuzzyPicker integration: Results displayed via FuzzyPicker (design-system
+ *    primitive) with fuzzy filtering and keyboard navigation.
+ *
+ * 4. Preview pane: PREVIEW_CONTEXT_LINES=4 shows context around matches.
+ *    Split layout (previewOnRight) when columns >= 140.
+ *
+ * 5. File operations: openFileInExternalEditor for jump-to-source.
+ *    readFileInRange for preview content extraction.
+ *
+ * 6. Analytics: logEvent('global_search_used') tracks search adoption.
+ *
+ * 7. Overlay registration: useRegisterOverlay prevents Chat shortcut leakage.
+ *
+ * See: analysis/components/04-component-index.md §2.3
+ */
+
 /**
  * Global Search dialog (ctrl+shift+f / cmd+shift+f).
  * Debounced ripgrep search across the workspace.

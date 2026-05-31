@@ -20,6 +20,41 @@ import { formatDuration, formatNumber } from '../utils/format.js';
 import { evictTerminalTask } from '../utils/task/framework.js';
 import { isTerminalStatus } from './tasks/taskStatusUtils.js';
 
+/* ARCHITECTURE NOTE: CoordinatorTaskPanel — background agent status panel (CoordinatorAgentStatus.tsx:1-273)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Steerable list of background agent tasks rendered below the prompt input.
+ * Shows running/retained local_agent tasks with status, duration, and controls.
+ *
+ * Key patterns:
+ *
+ * 1. Visibility gating: getVisibleAgentTasks() filters tasks where evictAfter !== 0.
+ *    Presence in AppState.tasks IS visibility — the 1s tick evicts tasks past
+ *    their evictAfter deadline.
+ *
+ * 2. 1-second eviction tick: setInterval checks evictAfter timestamps and calls
+ *    evictTerminalTask() for completed tasks. This propagates to all consumers
+ *    (useCoordinatorTaskCount, panel render, index resolvers) through AppState.
+ *
+ * 3. Task count: useCoordinatorTaskCount() returns visible task count for footer
+ *    navigation. Shared derivation with getVisibleAgentTasks() prevents count drift.
+ *
+ * 4. Selection state: coordinatorTaskIndex in AppState tracks which task row is
+ *    selected. tasksSelected (footerSelection === 'tasks') drives highlight.
+ *
+ * 5. Terminal status detection: isTerminalStatus() + isPanelAgentTask() determine
+ *    which tasks show in the panel. evictAfter timestamp controls auto-dismiss.
+ *
+ * 6. View modes: enterTeammateView/exitTeammateView for drilling into agent details.
+ *    viewingAgentTaskId tracks which agent is being viewed.
+ *
+ * 7. Agent name registry: agentNameRegistry maps task IDs to display names.
+ *
+ * 8. Formatting: formatDuration for elapsed time, formatNumber for token counts.
+ *    wrapText for description truncation at terminal width.
+ *
+ * See: analysis/components/ — agent status display
+ */
+
 /**
  * Which panel-managed tasks currently have a visible row.
  * Presence in AppState.tasks IS visibility — the 1s tick in

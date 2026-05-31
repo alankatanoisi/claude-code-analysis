@@ -5,6 +5,28 @@ import Link from '../../ink/components/Link.js';
 import { supportsHyperlinks } from '../../ink/supports-hyperlinks.js';
 import { Box, Text } from '../../ink.js';
 import { getStoredImagePath } from '../../utils/imageStore.js';
+
+/* ARCHITECTURE NOTE: UserImageMessage — image attachment renderer (UserImageMessage.tsx:1-59)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Renders an image attachment in user messages as a clickable link or plain text.
+ *
+ * Key patterns:
+ *
+ * 1. Image store integration: getStoredImagePath(imageId) retrieves the local
+ *    file path for a stored image by numeric ID.
+ *
+ * 2. Hyperlink support: If terminal supports hyperlinks (supportsHyperlinks()),
+ *    renders a clickable Link with file:// URL (pathToFileURL). Otherwise
+ *    falls back to plain text label.
+ *
+ * 3. MessageResponse wrapper: When addMargin=false, wraps in MessageResponse
+ *    to visually connect to the message above. When addMargin=true, adds
+ *    marginTop=1 for standalone image (new user turn without text).
+ *
+ * 4. Label format: `[Image #${imageId}]` when ID present, `[Image]` otherwise.
+ *
+ * See: analysis/components/messages/ — image attachment display
+ */
 import { MessageResponse } from '../MessageResponse.js';
 type Props = {
   imageId?: number;

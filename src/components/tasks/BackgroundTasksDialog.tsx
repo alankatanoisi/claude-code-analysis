@@ -1,3 +1,73 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: BackgroundTasksDialog.tsx — Background Task Workspace
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// getSelectableBackgroundTasks(tasks, foregroundedTaskId)
+// ──────────────────────────────────────────────────────
+// First filters for isBackgroundTask, then excludes the current foreground
+// local_agent. This prevents an agent already being viewed in the main
+// interface from appearing again in the task dialog.
+//
+// BackgroundTasksDialog(...)
+// ──────────────────────────
+// Core is NOT display, but "normalizing multiple backend execution bodies
+// into a unified navigation list." Converts all background tasks into list
+// items and sorts/groups them: bash, remote agent, local agent, teammates,
+// workflows, MCP monitors, dream. Uses useRegisterOverlay to prevent
+// upper-level Chat shortcut leaks. Binds confirm:previous/next/yes to list
+// navigation via useKeybindings.
+//
+// toListItem(task)
+// ────────────────
+// Uniformly maps by task.type into ListItem. Extracts most appropriate label
+// per task type: shell uses command/description, remote agent uses title,
+// local agent uses description, teammate uses @agentName, workflow uses
+// summary or description. Converts backend task state model → frontend
+// displayable model.
+//
+// Item(...)
+// ─────────
+// Unified renderer for task list items. Calculates maxActivityWidth from
+// terminal width, uses isCoordinatorMode for selection pointer color.
+// Delegates to BackgroundTaskComponent for non-leader items.
+//
+// TeammateTaskGroups(...)
+// ──────────────────────
+// Separates leader and in_process_teammate, then groups by teamName. The
+// task dialog does NOT flatten teammates as ordinary tasks — it preserves
+// team semantics with grouped display.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: BackgroundTasksDialog — unified async task workspace (BackgroundTasksDialog.tsx:1-693)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Normalizes heterogeneous background execution bodies into a unified
+ * navigation and display interface. Handles 7+ task types through a common
+ * ListItem abstraction.
+ *
+ * Key patterns:
+ *
+ * 1. Task type normalization: toListItem() maps each task.type (local_bash,
+ *    remote_agent, local_agent, in_process_teammate, workflow, monitor_mcp,
+ *    dream) into a uniform ListItem with id, label, status, activity.
+ *
+ * 2. Overlay registration: useRegisterOverlay prevents Chat shortcut leakage
+ *    — keyboard events inside the dialog don't propagate to the main REPL.
+ *
+ * 3. Detail views: Each task type has its own detail dialog component
+ *    (ShellDetailDialog, RemoteSessionDetailDialog, AsyncAgentDetailDialog,
+ *    InProcessTeammateDetailDialog, DreamDetailDialog).
+ *
+ * 4. Team grouping: TeammateTaskGroups preserves team semantics — leaders
+ *    and teammates are grouped by teamName rather than flattened into the
+ *    general task list.
+ *
+ * 5. Coordinator mode: isCoordinatorMode affects selection pointer color
+ *    and navigation behavior when managing forked agents.
+ *
+ * See: analysis/components/03-platform-components.md §2
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import figures from 'figures';

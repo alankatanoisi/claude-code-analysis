@@ -2,6 +2,36 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import { isShutdownApproved, isShutdownRejected, isShutdownRequest, type ShutdownRejectedMessage, type ShutdownRequestMessage } from '../../utils/teammateMailbox.js';
+
+/* ARCHITECTURE NOTE: ShutdownMessage — teammate shutdown workflow (ShutdownMessage.tsx:1-132)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Renders shutdown request/approval/rejection messages for multi-agent (swarm) mode.
+ * Also provides utility functions for parsing and summarizing shutdown messages.
+ *
+ * Key patterns:
+ *
+ * 1. ShutdownRequestDisplay: Warning-colored border with "Shutdown request
+ *    from {teammate}" header. Shows optional reason. Used when a teammate
+ *    agent requests to exit the session.
+ *
+ * 2. ShutdownRejectedDisplay: Subtle (grey) border with "Shutdown rejected
+ *    by {teammate}" and reason. Includes guidance: "Teammate is continuing
+ *    to work. You may request shutdown again later."
+ *
+ * 3. tryRenderShutdownMessage(content): Parses raw string content using
+ *    isShutdownRequest/isShutdownApproved/isShutdownRejected type guards
+ *    from teammateMailbox.js. Returns rendered component or null.
+ *    Note: Approved shutdown is handled inline by caller (skipped here).
+ *
+ * 4. getShutdownMessageSummary(content): Returns brief text summary for
+ *    queue display — e.g., "[Shutdown Request from X] reason" or
+ *    "[Shutdown Approved] X is now exiting".
+ *
+ * 5. Teammate mailbox protocol: Uses structured message types from
+ *    teammateMailbox.js for inter-agent communication.
+ *
+ * See: analysis/components/messages/ — swarm shutdown UI
+ */
 type ShutdownRequestProps = {
   request: ShutdownRequestMessage;
 };

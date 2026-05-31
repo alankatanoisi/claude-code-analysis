@@ -9,6 +9,37 @@ import { PermissionDialog } from '../PermissionDialog.js';
 import type { PermissionRequestProps } from '../PermissionRequest.js';
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js';
 import { logUnaryPermissionEvent } from '../utils.js';
+
+/* ARCHITECTURE NOTE: WebFetchPermissionRequest — web fetch permission (WebFetchPermissionRequest.tsx:1-258)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────
+ * Requests user approval before fetching a URL via the WebFetch tool.
+ *
+ * Key patterns:
+ *
+ * 1. URL parsing: inputToPermissionRuleContent extracts hostname from URL
+ *    using WebFetchTool.inputSchema.safeParse. Creates "domain:hostname"
+ *    rule content for permission matching.
+ *
+ * 2. Multiple approval options:
+ *    - "yes": Allow once
+ *    - "yes-domain": Always allow this domain
+ *    - "no": Deny
+ *
+ * 3. Domain-based rules: Permission rules can be scoped to specific
+ *    domains (e.g., "domain:example.com") for granular control.
+ *
+ * 4. Theme-aware display: useTheme for consistent styling.
+ *
+ * 5. Select with descriptions: OptionWithDescription for rich option
+ *    display with explanatory text.
+ *
+ * 6. Permission rule explanation: Shows why permission is needed based
+ *    on existing rules.
+ *
+ * 7. Unary event logging: logUnaryPermissionEvent for decision tracking.
+ *
+ * See: analysis/components/permissions/ — web fetch permission
+ */
 function inputToPermissionRuleContent(input: {
   [k: string]: unknown;
 }): string {

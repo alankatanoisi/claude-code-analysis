@@ -1,3 +1,50 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: FileEditPermissionRequest.tsx — File Edit Diff Approval
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// FileEditPermissionRequest(...)
+// ──────────────────────────────
+// File edit approval does NOT just display a diff — it allows subsequent IDE
+// diff pipelines to make modifications, write back, and re-submit based on
+// ideDiffSupport. Steps:
+// 1. Parse via FileEditTool.inputSchema: file_path, old_string, new_string, replace_all
+// 2. Generate subtitle via relative(getCwd(), file_path)
+// 3. Generate filename in question text via basename(file_path)
+// 4. Render single string replacement diff using FileEditToolDiff
+// 5. Pass parseInput and ideDiffSupport to FilePermissionDialog
+// The ideDiffSupport object carries getConfig (creating diff config) and
+// applyChanges (modifying edits back from IDE) — enabling round-trip editing.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: FileEditPermissionRequest — IDE-aware diff approval (FileEditPermissionRequest.tsx:1-201)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Handles file edit permission requests with IDE diff pipeline integration.
+ * Allows IDEs to modify the diff before final approval.
+ *
+ * Key patterns:
+ *
+ * 1. Schema parsing: FileEditTool.inputSchema validates file_path, old_string,
+ *    new_string, replace_all from the tool input.
+ *
+ * 2. IDE diff support: ideDiffSupport object provides:
+ *    - getConfig(): Creates diff config from input parameters
+ *    - applyChanges(): Applies IDE-modified edits back to the input
+ *    This enables round-trip editing where the IDE can modify the diff
+ *    before the user approves.
+ *
+ * 3. Diff rendering: FileEditToolDiff renders a single string replacement
+ *    diff with syntax highlighting and line numbers.
+ *
+ * 4. FilePermissionDialog: Shared dialog for file permission requests.
+ *    Shows file path, diff preview, and approve/reject/always-allow options.
+ *
+ * 5. Path resolution: relative(getCwd(), file_path) for display subtitle,
+ *    basename(file_path) for the question text.
+ *
+ * See: analysis/components/permissions/ — file edit approval
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import { basename, relative } from 'path';
 import React from 'react';

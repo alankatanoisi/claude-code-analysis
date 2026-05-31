@@ -1,3 +1,19 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: HooksConfigMenu.tsx — Layered Hooks Browser State Machine
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// HooksConfigMenu(...)
+// ────────────────────
+// "An obvious layered state machine, not a simple collapsible list."
+// Maintains modeState with four levels: select-event → select-matcher →
+// select-hook → view-hook. Uses useSettingsChange to detect policy settings
+// (disableAllHooks, allowManagedHooksOnly). Merges toolNames + mcp.tools.map
+// into combinedToolNames. Calls groupHooksByEventAndMatcher to derive data,
+// then uses getSortedMatchersForEvent, getHooksForMatcher for drill-down.
+// Binds confirm:no return logic for each level.
+// ============================================================================
+
 import { c as _c } from "react/compiler-runtime";
 /**
  * HooksConfigMenu is a read-only browser for configured hooks.

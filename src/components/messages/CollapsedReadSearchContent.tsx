@@ -19,6 +19,44 @@ import { useSelectedMessageBg } from '../messageActions.js';
 import { PrBadge } from '../PrBadge.js';
 import { ToolUseLoader } from '../ToolUseLoader.js';
 
+/* ARCHITECTURE NOTE: CollapsedReadSearchContent — read/search group renderer (CollapsedReadSearchContent.tsx:1-484)
+ * ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders collapsed groups of Read/Grep/Glob/FileRead tool calls as a compact
+ * summary instead of individual tool call blocks. This is a key UX optimization
+ * for tool-heavy sessions where dozens of file reads would otherwise dominate
+ * the transcript.
+ *
+ * Key patterns:
+ *
+ * 1. Minimum display time: MIN_HINT_DISPLAY_MS=700 ensures fast-completing
+ *    tool calls (bash commands, file reads) are actually readable instead of
+ *    flickering past in a single frame. useMinDisplayTime hook enforces this.
+ *
+ * 2. Two display modes:
+ *    - Compact: Shows "Reading 5 files..." with a spinner and ⤿ hints for
+ *      recently completed tools.
+ *    - Verbose: Expands to show each individual tool call with its parameters,
+ *      status (resolved/errored/in-progress), and timing.
+ *
+ * 3. Active group detection: isActiveGroup=true for the last collapsed group
+ *    (still loading). Controls whether the spinner runs and new completions
+ *    animate in.
+ *
+ * 4. Tool resolution tracking: Uses lookups.resolvedToolUseIDs and
+ *    lookups.erroredToolUseIDs to show per-tool status. ToolUseLoader
+ *    renders the spinning dot for in-progress tools.
+ *
+ * 5. Feature-gated team member collapse: feature('TEAMMEM') gates
+ *    teamMemCollapsed.js for teammate message collapsing.
+ *
+ * 6. PR badge integration: PrBadge shows PR references found in tool output.
+ *
+ * 7. OffscreenFreeze: Wraps the component to prevent Ink re-rendering when
+ *    scrolled off screen.
+ *
+ * See: analysis/components/messages/ — collapsed group rendering
+ */
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 const teamMemCollapsed = feature('TEAMMEM') ? require('./teamMemCollapsed.js') as typeof import('./teamMemCollapsed.js') : null;
 /* eslint-enable @typescript-eslint/no-require-imports */

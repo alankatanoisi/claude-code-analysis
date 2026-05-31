@@ -1,3 +1,77 @@
+// ============================================================================
+// CHAPTER 5 ANALYSIS: PromptInput.tsx — Input Orchestration Hub
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// PromptInput(...)
+// ────────────────
+// The input behavior coordinator — not just a text box but a unified controller
+// for: text editing, history, queued commands, typeahead suggestions, overlays,
+// bridge state, team context, voice mode, dialogs, and more.
+//
+// State management:
+// - isAutoUpdating, exitMessage, cursorOffset
+// - lastInternalInputRef distinguishes "externally injected input" from
+//   "internally edited input"
+// - expose insertTextRef.current providing insert(text) and
+//   setInputWithCursor(value, cursor)
+// - Reads from AppState: tasks, bridge state, team context, prompt suggestion/
+//   speculation, teammate view, expandedView
+//
+// getInitialPasteId(messages)
+// ───────────────────────────
+// Solves "new paste content reference IDs must not conflict with historical
+// ones." Iterates through historical user messages, finds the max paste id
+// from imagePasteIds and parseReferences(block.text) in text blocks, returns maxId + 1.
+//
+// buildBorderText(showFastIcon, showFastIconHint, fastModeCooldown)
+// ─────────────────────────────────────────────────────────────────
+// Pure display function that standardizes fast mode's visual hints into a
+// uniform border text structure. Returns undefined if icon shouldn't be shown,
+// otherwise constructs the top border hint (just icon, or icon + /fast hint).
+// ============================================================================
+
+/* ARCHITECTURE NOTE: PromptInput — input orchestration hub (PromptInput.tsx:1-1154+)
+ * ──────────────────────────────────────────────────────────────────────────────────
+ * The SECOND display hub of the application (alongside Messages.tsx).
+ * Coordinates all input-related behavior through a massive state machine.
+ *
+ * Key subsystems:
+ *
+ * 1. Text input management: cursorOffset tracking, paste ID generation,
+ *    insertTextRef for external injection (STT), lastInternalInputRef to
+ *    detect external vs internal changes.
+ *
+ * 2. History navigation: useArrowKeyHistory + useHistorySearch for ↑/↓
+ *    through command history with search filtering.
+ *
+ * 3. Typeahead suggestions: useTypeahead for /command, @member, #channel,
+ *    [Image], token budget, ultrathink/ultraplan/ultrareview keyword triggers.
+ *    Combined highlights merged with priority-based layering.
+ *
+ * 4. Footer pill navigation: tasks/tmux/bagel/teams/bridge/companion pills
+ *    with AppState-backed selection. navigateFooter() moves between pills.
+ *
+ * 5. Team/agent routing: getActiveAgentForInput routes input to viewed
+ *    teammate (in-process or local_agent). Direct member messages (@name)
+ *    parsed and sent via writeToMailbox.
+ *
+ * 6. Speculation integration: onSubmit checks speculation.status === 'active'
+ *    to inject messages as they stream (skipReset prevents aborting speculation).
+ *
+ * 7. Dialog orchestration: ModelPicker, QuickOpen, GlobalSearch, HistorySearch,
+ *    TeamsDialog, BridgeDialog, AutoModeOptIn — all managed as local state.
+ *
+ * 8. Feature flags: BUDDY (companion sprite), KAIROS/BRIEF (brief mode),
+ *    ULTRAPLAN, TOKEN_BUDGET — conditional via feature() or runtime checks.
+ *
+ * This component is the primary consumer of AppState slices — reads ~20+
+ * different state fields via individual useAppState calls (slice subscription
+ * design prevents unnecessary re-renders).
+ *
+ * See: analysis/components/02-core-interaction-components.md §2
+ */
+
 import { feature } from 'bun:bundle';
 import chalk from 'chalk';
 import * as path from 'path';

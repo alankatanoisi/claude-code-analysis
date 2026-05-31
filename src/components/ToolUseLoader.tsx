@@ -8,6 +8,36 @@ type Props = {
   isUnresolved: boolean;
   shouldAnimate: boolean;
 };
+
+/* ARCHITECTURE NOTE: ToolUseLoader — tool call status indicator (ToolUseLoader.tsx:1-42)
+ * ──────────────────────────────────────────────────────────────────────────────────
+ * Renders the status indicator (spinning dot) for tool calls. Small but
+ * critical component — appears next to every tool call in the transcript.
+ *
+ * Key patterns:
+ *
+ * 1. Blink animation: useBlink(shouldAnimate) toggles between BLACK_CIRCLE (●)
+ *    and space. Controls whether the loader animates or stays static.
+ *
+ * 2. Color states:
+ *    - isUnresolved: default color (no status yet, still loading)
+ *    - isError: "error" color (red, tool failed)
+ *    - resolved: "success" color (green, tool completed)
+ *
+ * 3. Chalk rendering caveat: The code is particularly sensitive to tag ordering.
+ *    A </dim> followed immediately by </bold> tag incorrectly renders as dim
+ *    because both reset via \x1b[22m and chalk can't distinguish them.
+ *    See: https://github.com/chalk/chalk/issues/290
+ *
+ * 4. Layout: Box with minWidth={2} reserves space for the indicator + padding.
+ *    Prevents layout shift when the indicator appears/disappears.
+ *
+ * 5. Dim state: isUnresolved messages get dimColor=true for the loading state.
+ *
+ * Used by: AssistantToolUseMessage, CollapsedReadSearchContent
+ *
+ * See: analysis/components/ — tool call status display
+ */
 export function ToolUseLoader(t0) {
   const $ = _c(7);
   const {

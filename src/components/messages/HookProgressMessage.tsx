@@ -11,6 +11,34 @@ type Props = {
   verbose: boolean;
   isTranscriptMode?: boolean;
 };
+
+/* ARCHITECTURE NOTE: HookProgressMessage — hook execution progress (HookProgressMessage.tsx:1-116)
+ * ────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders progress indicators for SDK hooks (PreToolUse, PostToolUse, etc.)
+ * that run before/after tool execution.
+ *
+ * Key patterns:
+ *
+ * 1. Hook counting: Uses lookups.inProgressHookCounts and lookups.resolvedHookCounts
+ *    to track how many hooks of each type are running vs. completed for a given
+ *    toolUseID.
+ *
+ * 2. Early return: Returns null when inProgressHookCount === 0 (no hooks running)
+ *    or when resolvedHookCount === inProgressHookCount (all hooks completed).
+ *
+ * 3. Transcript mode: In transcript mode, shows a dimmed count like "2 PreToolUse
+ *    hooks ran" for completed hooks. In prompt mode, hides completed hooks entirely.
+ *
+ * 4. Hook event types: PreToolUse and PostToolUse are handled specially — they
+ *    show a count-based summary. Other hook events (Notification, etc.) show
+ *    their own progress messages.
+ *
+ * 5. Integration with shouldRenderStatically: Messages with unresolved hooks
+ *    are marked as transient (not static) so they continue to update as hooks
+ *    complete.
+ *
+ * See: analysis/components/messages/ — hook progress display
+ */
 export function HookProgressMessage(t0) {
   const $ = _c(22);
   const {

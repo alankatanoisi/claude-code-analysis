@@ -14,6 +14,37 @@ import { PermissionDialog } from '../PermissionDialog.js';
 import { PermissionPrompt, type PermissionPromptOption, type ToolAnalyticsContext } from '../PermissionPrompt.js';
 import type { PermissionRequestProps } from '../PermissionRequest.js';
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js';
+
+/* ARCHITECTURE NOTE: SkillPermissionRequest — skill execution permission (SkillPermissionRequest.tsx:1-369)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────────
+ * Requests user approval before executing a skill (custom tool/command).
+ *
+ * Key patterns:
+ *
+ * 1. Skill parsing: parseInput extracts skill name, command, and parameters
+ *    from toolUseConfirm.input. Uses SkillTool.inputSchema.safeParse.
+ *
+ * 2. Multiple approval options:
+ *    - "yes": Allow once
+ *    - "yes-exact": Always allow this exact skill
+ *    - "yes-prefix": Always allow skills with this prefix
+ *    - "no": Deny
+ *
+ * 3. Analytics context: sanitizeToolNameForAnalytics for safe telemetry.
+ *    SKILL_TOOL_NAME constant for skill tool identification.
+ *
+ * 4. Permission rule explanation: Shows why the permission is needed
+ *    based on existing rules and workspace configuration.
+ *
+ * 5. Unary event logging: logUnaryEvent for detailed permission decision
+ *    tracking. usePermissionRequestLogging hook for lifecycle logging.
+ *
+ * 6. Worker badge: Shows which swarm worker is requesting the skill.
+ *
+ * 7. Original cwd: getOriginalCwd for context-aware permission display.
+ *
+ * See: analysis/components/permissions/ — skill execution permission
+ */
 type SkillOptionValue = 'yes' | 'yes-exact' | 'yes-prefix' | 'no';
 export function SkillPermissionRequest(props) {
   const $ = _c(51);

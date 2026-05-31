@@ -2,6 +2,28 @@ import { c as _c } from "react/compiler-runtime";
 import React from 'react';
 import { Box, Text } from '../../ink.js';
 type Props = {
+
+/* ARCHITECTURE NOTE: AssistantRedactedThinkingMessage — redacted thinking placeholder (AssistantRedactedThinkingMessage.tsx:1-31)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────
+ * Minimal placeholder for thinking blocks that have been redacted/hidden.
+ *
+ * Key patterns:
+ *
+ * 1. Static display: "✻ Thinking…" in dimColor italic — no content shown,
+ *    no Ctrl+O expand option (content is permanently unavailable).
+ *
+ * 2. Differs from AssistantThinkingMessage: That component shows actual
+ *    thinking content (or compacted summary). This component handles the
+ *    case where thinking was redacted entirely (e.g., by safety filters
+ *    or policy enforcement).
+ *
+ * 3. No addMargin default: Defaults to false, same as AssistantThinkingMessage.
+ *
+ * 4. Simplest leaf component: Only 30 lines, no conditional rendering beyond
+ *    the addMargin spacing.
+ *
+ * See: analysis/components/messages/ — redacted thinking placeholder
+ */
   addMargin: boolean;
 };
 export function AssistantRedactedThinkingMessage(t0) {

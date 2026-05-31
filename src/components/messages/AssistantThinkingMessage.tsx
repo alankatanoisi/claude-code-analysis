@@ -4,6 +4,34 @@ import React from 'react';
 import { Box, Text } from '../../ink.js';
 import { CtrlOToExpand } from '../CtrlOToExpand.js';
 import { Markdown } from '../Markdown.js';
+
+/* ARCHITECTURE NOTE: AssistantThinkingMessage — thinking block renderer (AssistantThinkingMessage.tsx:1-86)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders the model's "thinking" blocks (extended reasoning/chain-of-thought).
+ *
+ * Key patterns:
+ *
+ * 1. Two display modes:
+ *    - Compact (default): "∴ Thinking" + CtrlOToExpand hint in dim italic.
+ *    - Full (transcript mode or verbose): Shows complete thinking content
+ *      via Markdown component with dimColor styling.
+ *
+ * 2. hideInTranscript: When true, renders nothing. Used for "past thinking"
+ *    blocks that should be hidden after compaction or in transcript mode
+ *    to reduce noise.
+ *
+ * 3. Empty guard: Returns null if thinking content is empty/falsy.
+ *
+ * 4. Typography: "∴ Thinking" (U+2234 therefore symbol) + "…" ellipsis in
+ *    compact mode. Full mode shows the thinking text in dimColor italic
+ *    Markdown with paddingLeft=2 indentation.
+ *
+ * 5. Flexible input: Accepts ThinkingBlock, ThinkingBlockParam, or minimal
+ *    { type: 'thinking', thinking: string } — handles both API responses
+ *    and internal message formats.
+ *
+ * See: analysis/components/messages/ — thinking/reasoning display
+ */
 type Props = {
   // Accept either full ThinkingBlock/ThinkingBlockParam or a minimal shape with just type and thinking
   param: ThinkingBlock | ThinkingBlockParam | {

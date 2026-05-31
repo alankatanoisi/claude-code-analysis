@@ -14,6 +14,31 @@ type Props = {
   titleRight?: React.ReactNode;
   children: React.ReactNode;
 };
+
+/* ARCHITECTURE NOTE: PermissionDialog — permission dialog frame (PermissionDialog.tsx:1-72)
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * Reusable frame component for all permission request dialogs. Wraps content
+ * with PermissionRequestTitle, padding, and optional worker badge.
+ *
+ * Key patterns:
+ *
+ * 1. Title rendering: PermissionRequestTitle shows the tool name + subtitle
+ *    with optional worker badge (for teammate-origin permissions).
+ *
+ * 2. Color theming: Default "permission" color, overridable via color/titleColor
+ *    props. Integrates with the Theme system.
+ *
+ * 3. Layout: Box with paddingX=1 for title area, innerPaddingX (default 1)
+ *    for content area. titleRight slot for additional controls (e.g., rules link).
+ *
+ * 4. Worker badge: workerBadge prop shows teammate identity when the permission
+ *    request originates from a swarm teammate rather than the leader.
+ *
+ * Used by: FilePermissionDialog, BashPermissionRequest, FileEditPermissionRequest,
+ * and all other permission-specific dialogs.
+ *
+ * See: analysis/components/permissions/ — permission dialog frame
+ */
 export function PermissionDialog(t0) {
   const $ = _c(15);
   const {

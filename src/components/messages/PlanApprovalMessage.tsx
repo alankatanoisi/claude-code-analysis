@@ -5,6 +5,32 @@ import { Box, Text } from '../../ink.js';
 import { jsonParse } from '../../utils/slowOperations.js';
 import { type IdleNotificationMessage, isIdleNotification, isPlanApprovalRequest, isPlanApprovalResponse, type PlanApprovalRequestMessage, type PlanApprovalResponseMessage } from '../../utils/teammateMailbox.js';
 import { getShutdownMessageSummary } from './ShutdownMessage.js';
+
+/* ARCHITECTURE NOTE: PlanApprovalMessage — plan approval workflow (PlanApprovalMessage.tsx:1-222)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * Renders plan approval request/response displays for multi-agent (swarm) mode.
+ * Handles the approval gate before plan execution.
+ *
+ * Key patterns:
+ *
+ * 1. PlanApprovalRequestDisplay: Shows plan content in a dashed box with
+ *    "planMode" colored border. Displays plan file path and Markdown content.
+ *    Used when a teammate agent submits a plan for approval.
+ *
+ * 2. PlanApprovalResponseDisplay: Shows approval result — green "✓ Plan
+ *    Approved" or red "✗ Plan Rejected" with optional rejection reason.
+ *
+ * 3. IdleNotification: Handles idle notification messages that may accompany
+ *    plan approvals (e.g., "waiting for your response").
+ *
+ * 4. Cross-references: getShutdownMessageSummary and getTaskAssignmentSummary
+ *    used for summarizing related message types within plan context.
+ *
+ * 5. Teammate mailbox: Uses isPlanApprovalRequest/Response type guards from
+ *    teammateMailbox.js for type-safe message routing.
+ *
+ * See: analysis/components/messages/ — swarm approval flow
+ */
 import { getTaskAssignmentSummary } from './TaskAssignmentMessage.js';
 type PlanApprovalRequestProps = {
   request: PlanApprovalRequestMessage;

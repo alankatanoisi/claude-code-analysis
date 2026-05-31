@@ -3,6 +3,27 @@ import figures from 'figures';
 import * as React from 'react';
 import { Box, Text } from 'src/ink.js';
 type Props = {
+
+/* ARCHITECTURE NOTE: PromptInputStashNotice — stashed input indicator (PromptInputStashNotice.tsx:1-25)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * Shows when the user has stashed input that will auto-restore after submit.
+ *
+ * Key patterns:
+ *
+ * 1. Conditional display: Returns null when hasStash=false — only shows
+ *    when there's actually stashed content.
+ *
+ * 2. Static component: 25 lines, memo-cached with Symbol sentinel.
+ *    "⸱ Stashed (auto-restores after submit)" in dimColor.
+ *
+ * 3. Stash mechanism: Input is temporarily hidden during submission and
+ *    automatically restored afterward — prevents input loss during
+ *    multi-turn operations.
+ *
+ * 4. paddingLeft=2: Indented to align with the prompt input area.
+ *
+ * See: analysis/components/PromptInput/ — stash notice
+ */
   hasStash: boolean;
 };
 export function PromptInputStashNotice(t0) {

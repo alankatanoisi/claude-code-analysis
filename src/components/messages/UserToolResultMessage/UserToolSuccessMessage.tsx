@@ -10,6 +10,34 @@ import { deleteClassifierApproval, getClassifierApproval, getYoloClassifierAppro
 import type { buildMessageLookups } from '../../../utils/messages.js';
 import { MessageResponse } from '../../MessageResponse.js';
 import { HookProgressMessage } from '../HookProgressMessage.js';
+
+/* ARCHITECTURE NOTE: UserToolSuccessMessage — successful tool result (UserToolSuccessMessage.tsx:1-104)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders a successful tool result with the tool's own display logic.
+ *
+ * Key patterns:
+ *
+ * 1. Tool delegation: Uses tool.renderToolResult() when available for
+ *    tool-specific success display (file read shows content, bash shows
+ *    output, etc.). Falls back to generic display.
+ *
+ * 2. Progress message integration: filterToolProgressMessages extracts
+ *    progress events for the tool call, rendered via HookProgressMessage.
+ *
+ * 3. Classifier approval: getClassifierApproval/deleteClassifierApproval
+ *    manages classifier approval state for tool calls that were auto-
+ *    approved by the classifier.
+ *
+ * 4. Feature-gated teammate success: feature('TEAMMEM') gates teammate
+ *    tool success display.
+ *
+ * 5. Condensed mode: style='condensed' for compact display in grouped
+ *    tool call summaries.
+ *
+ * 6. SentryErrorBoundary: Wraps the component for error isolation.
+ *
+ * See: analysis/components/messages/ — tool success display
+ */
 type Props = {
   message: NormalizedUserMessage;
   lookups: ReturnType<typeof buildMessageLookups>;

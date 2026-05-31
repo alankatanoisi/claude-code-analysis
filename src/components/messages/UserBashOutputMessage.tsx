@@ -2,6 +2,28 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import BashToolResultMessage from '../../tools/BashTool/BashToolResultMessage.js';
 import { extractTag } from '../../utils/messages.js';
+
+/* ARCHITECTURE NOTE: UserBashOutputMessage — bash output renderer (UserBashOutputMessage.tsx:1-54)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * Extracts and renders bash stdout/stderr from XML-wrapped content blocks.
+ * Delegates to BashToolResultMessage for actual display formatting.
+ *
+ * Key patterns:
+ *
+ * 1. XML tag extraction: extractTag(content, "bash-stdout") and
+ *    extractTag(content, "bash-stderr") parse the XML-wrapped output.
+ *
+ * 2. Persisted output unwrapping: If stdout contains <persisted-output>
+ *    wrapper (model-facing signaling), extracts inner content (file path
+ *    + preview) for user display. The wrapper tag itself is not shown.
+ *
+ * 3. Delegation: BashToolResultMessage handles the actual rendering with
+ *    syntax highlighting, truncation, and expand/collapse behavior.
+ *
+ * 4. Verbose mode: !!verbose passed through to control output expansion.
+ *
+ * See: analysis/components/messages/ — bash output display
+ */
 export function UserBashOutputMessage(t0) {
   const $ = _c(10);
   const {

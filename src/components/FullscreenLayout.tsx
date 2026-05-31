@@ -16,6 +16,41 @@ import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.j
 import PromptInputFooterSuggestions from './PromptInput/PromptInputFooterSuggestions.js';
 import type { StickyPrompt } from './VirtualMessageList.js';
 
+/* ARCHITECTURE NOTE: FullscreenLayout — workspace shell & scroll orchestrator (FullscreenLayout.tsx:1-637)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Assembles the "outer frame" of the fullscreen terminal UI. Manages the
+ * layout between scrollable content (messages), pinned bottom (prompt/spinner),
+ * overlays (permissions), and modals (dialogs).
+ *
+ * Key patterns:
+ *
+ * 1. ScrollChromeContext: Shared context for scroll-derived chrome (sticky
+ *    header, unread pill). StickyTracker in VirtualMessageList writes via
+ *    this context instead of threading callbacks up through Messages → REPL.
+ *
+ * 2. Unseen divider pill: Tracks the "N new messages" divider position via
+ *    dividerYRef. Shows a clickable pill while the viewport hasn't reached
+ *    the divider. Uses useSyncExternalStore for scroll subscription so
+ *    per-frame scroll doesn't re-render REPL.
+ *
+ * 3. Modal context: ModalContext allows Pane/Dialog inside modals to skip
+ *    their own frame — prevents double-framing in nested dialogs.
+ *
+ * 4. PromptOverlayProvider: Manages slash-command dialog content rendered
+ *    in an absolute-positioned bottom-anchored pane that paints over the
+ *    ScrollBox AND bottom slot.
+ *
+ * 5. Transcript peek: MODAL_TRANSCRIPT_PEEK=2 rows of transcript context
+ *    kept visible above the modal pane's ▔ divider so users can see what
+ *    triggered the dialog.
+ *
+ * 6. Bottom float: Absolute-positioned content anchored at bottom-right of
+ *    ScrollBox area (companion speech bubble). Rendered inside flexGrow
+ *    region so overflowY:hidden doesn't clip it.
+ *
+ * See: analysis/components/04-component-index.md §2.1
+ */
+
 /** Rows of transcript context kept visible above the modal pane's ▔ divider. */
 const MODAL_TRANSCRIPT_PEEK = 2;
 

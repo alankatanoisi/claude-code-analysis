@@ -3,6 +3,28 @@ import * as React from 'react';
 import { Markdown } from 'src/components/Markdown.js';
 import { MessageResponse } from 'src/components/MessageResponse.js';
 import { Box, Text } from '../../../ink.js';
+
+/* ARCHITECTURE NOTE: RejectedPlanMessage — rejected plan display (RejectedPlanMessage.tsx:1-31)
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Renders a rejected plan with the original plan content preserved.
+ *
+ * Key patterns:
+ *
+ * 1. Header: "User rejected Claude's plan:" in subtle color.
+ *
+ * 2. Plan content: Shows the rejected plan in a round-bordered box with
+ *    "planMode" color (amber/yellow) for visual consistency with plan
+ *    mode UI throughout the app.
+ *
+ * 3. Markdown rendering: Plan content rendered via Markdown for formatting.
+ *
+ * 4. Overflow hidden: overflow="hidden" prevents plan content from
+ *    expanding beyond the box width.
+ *
+ * 5. MessageResponse wrapper: Appears connected to the message above.
+ *
+ * See: analysis/components/messages/ — rejected plan display
+ */
 type Props = {
   plan: string;
 };

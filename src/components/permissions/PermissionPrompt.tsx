@@ -21,6 +21,36 @@ export type ToolAnalyticsContext = {
   isMcp: boolean;
 };
 export type PermissionPromptProps<T extends string> = {
+
+/* ARCHITECTURE NOTE: PermissionPrompt — shared permission prompt UI (PermissionPrompt.tsx:1-336)
+ * ──────────────────────────────────────────────────────────────────────────────────────────
+ * Base permission prompt component used by all permission request types.
+ * Provides the question, options, and optional feedback input.
+ *
+ * Key patterns:
+ *
+ * 1. Generic options system: PermissionPromptOption<T> with value, label,
+ *    feedbackConfig, and keybinding. Supports any string-typed option set.
+ *
+ * 2. Feedback input: Optional text input for accept/reject feedback.
+ *    DEFAULT_PLACEHOLDERS: "tell Claude what to do next" (accept),
+ *    "tell Claude what to do differently" (reject).
+ *
+ * 3. Keybinding integration: useKeybindings for keyboard shortcuts on
+ *    each option. KeybindingAction type for type-safe key references.
+ *
+ * 4. Select component: CustomSelect for option display and selection.
+ *
+ * 5. Analytics: logEvent with ToolAnalyticsContext (toolName, isMcp)
+ *    for permission decision tracking.
+ *
+ * 6. App state: useSetAppState for UI state updates on selection.
+ *
+ * 7. Used by: All permission request components (Bash, Filesystem,
+ *    FileEdit, Skill, WebFetch, etc.) as their option selection UI.
+ *
+ * See: analysis/components/permissions/ — shared prompt UI
+ */
   options: PermissionPromptOption<T>[];
   onSelect: (value: T, feedback?: string) => void;
   onCancel?: () => void;

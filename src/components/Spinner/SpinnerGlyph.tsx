@@ -3,6 +3,30 @@ import * as React from 'react';
 import { Box, Text, useTheme } from '../../ink.js';
 import { getTheme, type Theme } from '../../utils/theme.js';
 import { getDefaultCharacters, interpolateColor, parseRGB, toRGBColor } from './utils.js';
+
+/* ARCHITECTURE NOTE: SpinnerGlyph — animated spinner character (SpinnerGlyph.tsx:1-80)
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * Renders a single animated spinner character with color interpolation.
+ *
+ * Key patterns:
+ *
+ * 1. Frame-based animation: SPINNER_FRAMES = chars + reversed chars for
+ *    smooth bidirectional rotation. getDefaultCharacters() provides the
+ *    base character set.
+ *
+ * 2. Reduced motion: REDUCED_MOTION_DOT (●) with 2-second cycle (1s visible,
+ *    1s dim) for accessibility. Math.floor(time / cycle) % 2 toggles dim.
+ *
+ * 3. Stalled intensity: stalledIntensity (0-1) interpolates toward ERROR_RED
+ *    when the animation appears stalled — visual warning indicator.
+ *
+ * 4. Color interpolation: interpolateColor between theme messageColor and
+ *    error red based on stalled intensity.
+ *
+ * 5. Theme-aware: useTheme + getTheme for current theme colors.
+ *
+ * See: analysis/components/Spinner/ — spinner glyph
+ */
 const DEFAULT_CHARACTERS = getDefaultCharacters();
 const SPINNER_FRAMES = [...DEFAULT_CHARACTERS, ...[...DEFAULT_CHARACTERS].reverse()];
 const REDUCED_MOTION_DOT = '●';

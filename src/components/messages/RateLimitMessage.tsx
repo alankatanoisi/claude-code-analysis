@@ -7,6 +7,34 @@ import { shouldProcessMockLimits } from 'src/services/rateLimitMocking.js'; // U
 import { getRateLimitTier, getSubscriptionType, isClaudeAISubscriber } from 'src/utils/auth.js';
 import { hasClaudeAiBillingAccess } from 'src/utils/billing.js';
 import { MessageResponse } from '../MessageResponse.js';
+
+/* ARCHITECTURE NOTE: RateLimitMessage — rate limit handling and upsell (RateLimitMessage.tsx:1-161)
+ * ───────────────────────────────────────────────────────────────────────────────────────────
+ * Renders rate limit error messages with subscription-aware upsell prompts.
+ *
+ * Key patterns:
+ *
+ * 1. Subscription-aware upsell: getUpsellMessage generates different
+ *    messages based on subscription tier (Max, Max 20x, Team, Enterprise).
+ *    /extra-usage command for Max 20x users to purchase additional capacity.
+ *
+ * 2. Billing access check: hasClaudeAiBillingAccess determines if the user
+ *    can manage their subscription directly from the CLI.
+ *
+ * 3. Rate limit tier detection: getRateLimitTier identifies which rate limit
+ *    tier the user is on for appropriate messaging.
+ *
+ * 4. Mock support: shouldProcessMockLimits and /mock-limits command for
+ *    testing rate limit UI without hitting actual limits.
+ *
+ * 5. Claude AI limits hook: useClaudeAiLimits provides real-time rate limit
+ *    status and remaining capacity.
+ *
+ * 6. Auto-open options: shouldAutoOpenRateLimitOptionsMenu can automatically
+ *    show rate limit options when the user hits a limit.
+ *
+ * See: analysis/components/messages/ — rate limit and billing UI
+ */
 type UpsellParams = {
   shouldShowUpsell: boolean;
   isMax20x: boolean;

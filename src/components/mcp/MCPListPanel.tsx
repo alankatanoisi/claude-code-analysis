@@ -1,3 +1,31 @@
+// ============================================================================
+// CHAPTER 7 ANALYSIS: MCPListPanel.tsx — Browsable MCP Entity List
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// getScopeHeading(scope)
+// ──────────────────────
+// Maps project/local/user/enterprise/dynamic to user-readable titles. For
+// project/user/local, additionally includes the config file path via
+// describeMcpConfigFilePath. For dynamic, always displays "always available."
+//
+// groupServersByScope(serverList)
+// ───────────────────────────────
+// First buckets by server.scope, then sorts within each bucket by
+// server.name.localeCompare. Groups provide visual hierarchy in the list.
+//
+// MCPListPanel(...)
+// ─────────────────
+// MCP in this project is NOT a pure config file concept — it's a "browsable
+// entity" with runtime state, authentication state, scope source, and agent
+// affiliation. Reorganizes normal servers, claude.ai servers, agent-only
+// servers, and dynamic servers into a unified selection list. Maintains
+// selectedIndex, binds keybindings (previous/next/yes/no). Uses
+// renderServerItem to translate client state into: disabled, connected,
+// pending/reconnecting, needs-auth, failed. Uses renderAgentServerItem to
+// display agent-only MCP servers separately.
+// ============================================================================
+
 import { c as _c } from "react/compiler-runtime";
 import figures from 'figures';
 import React, { useCallback, useState } from 'react';

@@ -14,6 +14,48 @@ type Props = {
   dimColor?: boolean;
 };
 
+/* ARCHITECTURE NOTE: Markdown — terminal markdown renderer (Markdown.tsx:1-236)
+ * ───────────────────────────────────────────────────────────────────────────
+ * Renders markdown content in the terminal using marked.js lexer + custom
+ * Ink-based token rendering. Key performance optimizations for virtual scroll.
+ *
+ * Key patterns:
+ *
+ * 1. Token cache: Module-level Map<string, Token[]> with MRU eviction
+ *    (TOKEN_CACHE_MAX=500). Keyed by hashContent() to avoid retaining full
+ *    content strings. Survives unmount→remount (useMemo doesn't).
+ *
+ * 2. Syntax detection: MD_SYNTAX_RE regex checks first 500 chars for markdown
+ *    markers. Plain text skips marked.lexer entirely (~3ms savings per message).
+ *    Uses indexOf-style regex (not multiple includes scans) for speed.
+ *
+ * 3. Fast path: No markdown syntax → returns single paragraph token without
+ *    caching (reconstruction is single object allocation, caching would retain
+ *    4x content in raw/text fields for zero benefit).
+ *
+ * 4. Code highlighting: getCliHighlightPromise() provides syntax highlighting
+ *    for code blocks. Suspense + use() for async highlight resolution.
+ *
+ * 5. Table rendering: MarkdownTable component for pipe tables.
+ *
+ * 6. XML tag stripping: stripPromptXMLTags() removes XML-wrapped content
+ *    before rendering (bash output, command messages, etc.).
+ *
+ * 7. Marked configuration: configureMarked() sets up GFM (GitHub Flavored
+ *    Markdown) extensions. formatToken() renders individual tokens to Ink.
+ *
+ * 8. Settings integration: useSettings() for user preferences (e.g., code
+ *    highlighting language).
+ *
+ * 9. dimColor prop: Renders all content dimmed — used for secondary/auxiliary
+ *    text in the transcript.
+ *
+ * Performance: ~3ms per message for marked.lexer on long content. Cache hit
+ * is O(1) hash lookup. Plain text detection is O(500) regex test.
+ *
+ * See: analysis/components/ — markdown rendering
+ */
+
 // Module-level token cache — marked.lexer is the hot cost on virtual-scroll
 // remounts (~3ms per message). useMemo doesn't survive unmount→remount, so
 // scrolling back to a previously-visible message re-parses. Messages are

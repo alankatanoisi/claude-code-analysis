@@ -6,6 +6,32 @@ import { filterToolProgressMessages, type Tool, type Tools } from '../../../Tool
 import type { ProgressMessage } from '../../../types/message.js';
 import type { buildMessageLookups } from '../../../utils/messages.js';
 import { FallbackToolUseRejectedMessage } from '../../FallbackToolUseRejectedMessage.js';
+
+/* ARCHITECTURE NOTE: UserToolRejectMessage — tool rejection with reason (UserToolRejectMessage.tsx:1-95)
+ * ────────────────────────────────────────────────────────────────────────────────────────────────
+ * Renders a tool rejection with optional reason and progress context.
+ *
+ * Key patterns:
+ *
+ * 1. Tool-aware rejection: Receives full tool context (tool definition,
+ *    tools registry, lookups) for tool-specific rejection display.
+ *
+ * 2. Progress message integration: filterToolProgressMessages for rejection
+ *    context — shows what happened before the rejection.
+ *
+ * 3. Fallback delegation: FallbackToolUseRejectedMessage for tools without
+ *    custom rejection rendering.
+ *
+ * 4. Condensed mode: style='condensed' for compact display in grouped
+ *    tool summaries.
+ *
+ * 5. Terminal size awareness: useTerminalSize for responsive layout.
+ *    Theme access for color styling.
+ *
+ * 6. Transcript mode: isTranscriptMode affects display pacing and detail.
+ *
+ * See: analysis/components/messages/ — tool rejection with reason
+ */
 type Props = {
   input: {
     [key: string]: unknown;

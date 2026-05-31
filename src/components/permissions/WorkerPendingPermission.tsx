@@ -4,6 +4,29 @@ import { Box, Text } from '../../ink.js';
 import { getAgentName, getTeammateColor, getTeamName } from '../../utils/teammate.js';
 import { Spinner } from '../Spinner.js';
 import { WorkerBadge } from './WorkerBadge.js';
+
+/* ARCHITECTURE NOTE: WorkerPendingPermission — worker permission wait indicator (WorkerPendingPermission.tsx:1-105)
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Visual indicator shown on swarm workers while waiting for leader to
+ * approve a permission request.
+ *
+ * Key patterns:
+ *
+ * 1. Team/agent context: getTeamName(), getAgentName(), getTeammateColor()
+ *    provide swarm context for the pending permission display.
+ *
+ * 2. Spinner: Shows animated Spinner while waiting for approval.
+ *
+ * 3. Worker badge: WorkerBadge with worker name and color for identification.
+ *
+ * 4. Tool info: Displays the pending tool name and description so the
+ *    user can see what the worker is waiting to execute.
+ *
+ * 5. Used in swarm mode to show worker status when a sub-agent has hit
+ *    a permission gate and is waiting for the leader's decision.
+ *
+ * See: analysis/components/permissions/ — worker permission wait
+ */
 type Props = {
   toolName: string;
   description: string;

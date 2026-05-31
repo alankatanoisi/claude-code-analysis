@@ -1,3 +1,64 @@
+// ============================================================================
+// CHAPTER 6 ANALYSIS: PermissionRequest.tsx — Tool Approval Router
+//
+// FUNCTION-LEVEL BREAKDOWN:
+//
+// permissionComponentForTool(tool)
+// ────────────────────────────────
+// Maps a specific Tool type to a specific approval component. This is NOT a
+// string-based dispatch — it uses the tool class OBJECT itself. Examples:
+//   FileEditTool → FileEditPermissionRequest
+//   BashTool → BashPermissionRequest
+//   GlobTool/GrepTool/FileReadTool → FilesystemPermissionRequest
+// Feature-gated tools (ReviewArtifact, Workflow, Monitor) fall back to
+// FallbackPermissionRequest when the feature is disabled.
+//
+// PermissionRequest(...)
+// ──────────────────────
+// "The unified approval entry point + tool approval component router."
+// Constructs the rejection chain (onDone → onReject → toolUseConfirm.onReject),
+// binds app:interrupt, calls useNotifyAfterTimeout for permission_prompt
+// notification, then selects the actual approval component based on
+// toolUseConfirm.tool. Passes down toolUseConfirm / toolUseContext / verbose
+// / workerBadge / setStickyFooter.
+//
+// getNotificationMessage(toolUseConfirm)
+// ──────────────────────────────────────
+// Gets user-facing tool name via tool.userFacingName(input). Returns
+// specialized text for special tools (enter/exit plan mode, review artifact).
+// Falls back to generic message if tool name is unavailable. Handles
+// notification semantics of the permission dialog, not the approval itself.
+// ============================================================================
+
+/* ARCHITECTURE NOTE: PermissionRequest — unified approval entry point (PermissionRequest.tsx:1-249)
+ * ───────────────────────────────────────────────────────────────────────────────────────────────
+ * The control plane for tool approval dialogs. When the model wants to execute
+ * a tool that requires user permission, this component renders the appropriate
+ * approval UI.
+ *
+ * Key patterns:
+ *
+ * 1. Object-based dispatch: permissionComponentForTool uses the Tool CLASS
+ *    object (not a string) as the switch key. This is type-safe — TypeScript
+ *    ensures all tool classes are handled. Feature-gated tools (ReviewArtifact,
+ *    Workflow, Monitor) use conditional require() and fall back to
+ *    FallbackPermissionRequest when disabled.
+ *
+ * 2. Rejection chain: onDone → onReject → toolUseConfirm.onReject forms a
+ *    callback pipeline that propagates user decisions back to the execution
+ *    engine. The app:interrupt keybinding is bound for Ctrl+C cancellation.
+ *
+ * 3. Notification timing: useNotifyAfterTimeout delays the permission_prompt
+ *    notification so it doesn't appear immediately (avoids notification spam
+ *    for fast-resolving tools).
+ *
+ * 4. Per-tool specialization: Each tool type gets its own permission component
+ *    with context-appropriate UI (e.g., BashPermissionRequest shows the command,
+ *    FileEditPermissionRequest shows the diff preview).
+ *
+ * See: analysis/components/03-platform-components.md §1
+ */
+
 import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import * as React from 'react';
