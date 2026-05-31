@@ -1,100 +1,100 @@
-# 第二章：安全分析
+# Chapter 2: Security Analysis
 
-[返回总目录](../README.md)
-
----
-
-## 导读
-
-本章从安全视角对 Claude Code 进行全方位剖析，回答三个问题：
-
-1. **系统收集了哪些用户信息，如何被利用？**
-2. **代码本身存在哪些安全风险点？源码是怎么写的？**
-3. **系统为了保护用户的机器都建了哪些防线？**
-
-> **写给新手的提示**：阅读本章不需要任何安全背景。凡是涉及代码的地方，我们都会用通俗语言先解释"这段代码在做什么"，再解释"它为什么与安全有关"。
+[Back to Table of Contents](../README.md)
 
 ---
 
-## 第一节：用户信息收集与利用
+## Chapter Guide
 
-Claude Code 在运行过程中会接触和记录多种用户数据。我们把它分为三层，从"最隐蔽"到"最明显"逐层展开。
+This chapter provides a comprehensive analysis of Claude Code from a security perspective, answering three questions:
 
-### 1.1 第一层：进入模型的工作上下文（最隐蔽，风险最高）
+1. **What user information does the system collect, and how is it used?**
+2. **What security risk points exist in the code itself? How is the source code written?**
+3. **What defenses has the system built to protect the user's machine?**
 
-**相关源码**：
+> **For beginners**: Reading this chapter doesn't require any security background. Whenever code is involved, we will first explain in plain language "what this code does", then explain "why it's related to security".
+
+---
+
+## Section 1: User Information Collection and Usage
+
+Claude Code touches and records various types of user data during operation. We break it down into three layers, from "most covert" to "most obvious".
+
+### 1.1 Layer 1: Work Context Entering the Model (Most Covert, Highest Risk)
+
+**Related source files**:
 - [`src/services/api/claude.ts`](../src/services/api/claude.ts)
 - [`src/context.ts`](../src/context.ts)
 - [`src/utils/queryContext.ts`](../src/utils/queryContext.ts)
 - [`src/utils/attachments.ts`](../src/utils/attachments.ts)
 
-这一层是最容易被忽视的，但往往风险最高。每次用户和 Claude 对话，以下内容会被打包成"上下文"发送到 Anthropic 的模型 API：
+This layer is the easiest to overlook but often carries the highest risk. Every time a user talks to Claude, the following content is packaged into the "context" and sent to Anthropic's model API:
 
-| 内容类型 | 具体包含 | 敏感程度 |
+| Content Type | Specifics Included | Sensitivity Level |
 |----------|----------|----------|
-| 用户输入 | 所有对话内容 | 高 |
-| 历史对话 | 当前 session 的全部来回 | 高 |
-| 工具执行结果 | 命令运行输出、文件读取内容 | **极高** |
-| 文件与代码片段 | 当前编辑文件内容 | 极高 |
-| Git 状态快照 | diff、commit 信息 | 高 |
-| `CLAUDE.md` 与 memory 文件 | 用户自定义指令与长期记忆 | 高 |
-| 图片、文档附件 | 截图、PDF 等 | 中~高 |
-| MCP 资源内容 | 第三方工具返回的结果 | 不确定 |
+| User input | All conversation content | High |
+| Conversation history | All back-and-forth of the current session | High |
+| Tool execution results | Command output, file read content | **Extremely high** |
+| Files and code snippets | Current edited file content | Extremely high |
+| Git status snapshot | diff, commit information | High |
+| `CLAUDE.md` and memory files | User custom instructions and long-term memory | High |
+| Images, document attachments | Screenshots, PDFs, etc. | Medium~High |
+| MCP resource content | Results returned by third-party tools | Uncertain |
 
-**通俗解释**：想象你有一个开着麦克风的助理，每次你跟他说话，他不仅记住你说的话，还会把你桌上的文件、电脑屏幕上的代码、你最近运行的终端命令结果一并"报告"给后台服务器。这就是上下文的工作方式。
+**Plain explanation**: Imagine you have an assistant with an open microphone. Every time you speak, they not only remember what you said, but also "report" the documents on your desk, the code on your computer screen, and the results of your recent terminal commands to the backend server. This is how context works.
 
-**为什么这层最危险**：因为用户通常只注意"有没有数据上传"，而忽略了"什么在发送给模型"。Anthropic 的服务器接收的不是某个打点事件，而是包含源码、命令输出、文件内容的完整工作上下文。
+**Why this layer is most dangerous**: Because users usually only notice "is there data being uploaded", while ignoring "what is being sent to the model". Anthropic's server doesn't receive a single telemetry event — it receives the complete work context including source code, command output, and file content.
 
 ---
 
-### 1.2 第二层：本地持久化存储
+### 1.2 Layer 2: Local Persistent Storage
 
-**相关源码**：
+**Related source files**:
 - [`src/utils/sessionStorage.ts`](../src/utils/sessionStorage.ts)
 - [`src/utils/settings/types.ts`](../src/utils/settings/types.ts)
 
-系统会在本地磁盘保存大量信息，即使退出程序也不会消失：
+The system saves a large amount of information to local disk, which persists even after the program exits:
 
-- **transcript JSONL**：每次对话的完整逐条记录，类似聊天记录的数据库
-- **session metadata**：会话标题、标签、时间等元数据
-- **agent transcript**：子 agent 运行的独立记录
-- **本地用户配置与项目配置**：你在 `.claude/` 目录下的所有设置
-- **OAuth 账户缓存**：已登录的账户凭证
-- **memory 文件**：系统从历史对话中提炼的"长期记忆"
+- **transcript JSONL**: Complete record of each conversation, similar to a chat history database
+- **session metadata**: Session title, tags, time and other metadata
+- **agent transcript**: Independent record of sub-agent runs
+- **Local user config and project config**: All your settings under the `.claude/` directory
+- **OAuth account cache**: Logged-in account credentials
+- **memory files**: "Long-term memory" extracted by the system from conversation history
 
-**一个重要细节**：配置项 `cleanupPeriodDays` 控制 transcript 保留的时长，**默认不为 0**，意味着历史对话会在本地持续积累。设置为 `0` 才会停止保留并清理已有记录。
+**An important detail**: The config option `cleanupPeriodDays` controls transcript retention time, **and the default is not 0**, meaning conversation history accumulates locally over time. Set it to `0` to stop retention and clean up existing records.
 
-对于隐私敏感场景，可以通过 CLI 参数 `--no-session-persistence` 或配置 `cleanupPeriodDays: 0` 来关闭 transcript 持久化。
+For privacy-sensitive scenarios, you can disable transcript persistence via the CLI argument `--no-session-persistence` or config `cleanupPeriodDays: 0`.
 
 ---
 
-### 1.3 第三层：Memory 长期积累
+### 1.3 Layer 3: Long-term Memory Accumulation
 
-**相关源码**：
+**Related source files**:
 - [`src/memdir/memdir.ts`](../src/memdir/memdir.ts)
 - [`src/services/extractMemories/extractMemories.ts`](../src/services/extractMemories/extractMemories.ts)
 - [`src/services/SessionMemory/sessionMemory.ts`](../src/services/SessionMemory/sessionMemory.ts)
 - [`src/tools/AgentTool/agentMemory.ts`](../src/tools/AgentTool/agentMemory.ts)
 
-这是最"悄无声息"的一层。系统会自动从过去的对话中提炼关键信息，写入 memory 文件，并在未来的每一次对话开始时注入到模型的提示词中。
+This is the most "silent" layer. The system automatically extracts key information from past conversations, writes it to memory files, and injects it into the model's prompt at the start of every future conversation.
 
-Memory 的类型包括：
+Types of memory include:
 
-- 用户偏好与习惯
-- 用户的身份背景（职位、语言、技术栈）
-- 当前项目的关键事实
-- 参考信息与约束条件
-- 当前会话摘要
-- agent 角色记忆
-- 团队共享记忆
+- User preferences and habits
+- User identity background (position, language, tech stack)
+- Key facts about the current project
+- Reference information and constraints
+- Current session summary
+- Agent role memory
+- Team shared memory
 
-**通俗类比**：这相当于助理悄悄写了一个"关于你的小本子"，每次你开口前，他都会先翻一遍这个本子，根据以前了解到的你来做出反应。从用户角度，这等于系统在持续构建一个"长期协作画像"，且会跨越 session 延续。
+**Plain analogy**: This is equivalent to the assistant quietly keeping a "little notebook about you". Every time you start speaking, they flip through this notebook first, responding based on what they've previously learned about you. From the user's perspective, this means the system is continuously building a "long-term collaboration profile" that persists across sessions.
 
 ---
 
-### 1.4 第四层：Telemetry 遥测数据
+### 1.4 Layer 4: Telemetry Data
 
-**相关源码**：
+**Related source files**:
 - [`src/services/analytics/index.ts`](../src/services/analytics/index.ts)
 - [`src/services/analytics/config.ts`](../src/services/analytics/config.ts)
 - [`src/services/analytics/metadata.ts`](../src/services/analytics/metadata.ts)
@@ -102,100 +102,101 @@ Memory 的类型包括：
 - [`src/services/analytics/datadog.ts`](../src/services/analytics/datadog.ts)
 - [`src/utils/user.ts`](../src/utils/user.ts)
 
-Telemetry（遥测）是指系统主动向外部服务（如 Datadog）发送的使用统计数据。Claude Code 采集的内容包括：
+Telemetry refers to usage statistics that the system actively sends to external services (such as Datadog). The data collected by Claude Code includes:
 
-| 字段 | 说明 |
+| Field | Description |
 |------|------|
-| `deviceId` | 设备唯一标识 |
-| `sessionId` | 当次会话标识 |
-| app version / platform / arch | 软件与系统版本信息 |
-| terminal / CI 环境 | 运行环境类型 |
-| account UUID / org UUID | 账户与组织标识 |
-| subscriptionType / rateLimitTier | 订阅类型与配额级别 |
-| repo remote hash | 远端仓库的哈希标识（非原文） |
-| 工具使用事件 | 哪类工具被调用了多少次 |
-| 文件路径 hash / 内容 hash | 文件的哈希指纹（非原文） |
+| `deviceId` | Device unique identifier |
+| `sessionId` | Current session identifier |
+| app version / platform / arch | Software and system version information |
+| terminal / CI environment | Runtime environment type |
+| account UUID / org UUID | Account and organization identifier |
+| subscriptionType / rateLimitTier | Subscription type and rate limit tier |
+| repo remote hash | Hash identifier of remote repository (not original text) |
+| tool usage events | Which tools were called and how many times |
+| file path hash / content hash | Hash fingerprint of files (not original text) |
 
-**关键设计点**：源码中有一个专门的 TypeScript 类型标记值得注意：
+**Key design point**: There is a notable TypeScript type marker in the source code:
 
 ```typescript
 // src/services/analytics/index.ts
 export type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS = never
 ```
 
-这是一个"开发者协议类型"：凡是要上报到遥测后端的字符串，开发者必须在代码里显式做类型转换，写下 `as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS`，等同于手动签名"我确认这条数据不含代码或文件路径原文"。
+This is a "developer protocol type": any string to be reported to the telemetry backend must be explicitly type-cast by the developer, writing `as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS`, which is equivalent to a manual signature stating "I confirm this data does not contain original code or file paths".
 
-这说明工程团队**有意识地**在尝试避免把源码原文打进遥测。但这不等于没有任何敏感元数据——行为统计、哈希指纹、账户标识等依然会持续上报。
+This shows the engineering team **consciously** tries to avoid sending raw source code into telemetry. However, this doesn't mean no sensitive metadata is collected — behavioral statistics, hash fingerprints, account identifiers, etc., are still continuously reported.
 
 ---
 
-### 1.5 第五层：Team Memory 同步与上传
+### 1.5 Layer 5: Team Memory Sync and Upload
 
-**相关源码**：
+**Related source files**:
 - [`src/services/teamMemorySync/index.ts`](../src/services/teamMemorySync/index.ts)
 - [`src/services/teamMemorySync/watcher.ts`](../src/services/teamMemorySync/watcher.ts)
 - [`src/memdir/teamMemPaths.ts`](../src/memdir/teamMemPaths.ts)
 
-当用户启用 Team Memory 功能时，系统会：
+When the user enables Team Memory, the system will:
 
-1. 按 repo 识别团队 memory 命名空间
-2. 从服务器 pull 团队 memory 到本地
-3. 监听本地 memory 目录的文件变更
-4. 自动 push 本地变更回 Anthropic 服务器
+1. Identify the team memory namespace by repo
+2. Pull team memory from the server to local
+3. Watch for file changes in the local memory directory
+4. Automatically push local changes back to Anthropic's server
 
-上传的内容不是代码仓库本体，而是团队 memory 目录中的知识条目——但这些条目本身可能包含项目流程、内网知识库、运维路径、团队规章等敏感内容。
+The uploaded content is not the code repository itself, but knowledge entries from the team memory directory — however, these entries may themselves contain sensitive content such as project workflows, internal knowledge bases, operational paths, and team regulations.
 
-系统在这一步加入了客户端密钥扫描（见第三节详解），但本质仍是"组织级知识同步"，启用时请注意信息边界。
+The system incorporates client-side secret scanning at this step (see Section 3 for details), but the essence remains "organization-level knowledge synchronization". Be mindful of information boundaries when enabling this feature.
 
 ---
 
-### 1.6 第六层：用户主动触发的内容上传
+### 1.6 Layer 6: User-Initiated Content Upload
 
-**相关源码**：
+**Related source files**:
 - [`src/components/FeedbackSurvey/submitTranscriptShare.ts`](../src/components/FeedbackSurvey/submitTranscriptShare.ts)
 - [`src/services/api/grove.ts`](../src/services/api/grove.ts)
 - [`src/components/grove/Grove.tsx`](../src/components/grove/Grove.tsx)
 
-这部分最透明，但也值得了解：
+This part is the most transparent, but still worth understanding:
 
-- **Transcript 分享**：在用户提交反馈时，系统可能将会话记录（含 JSONL 原始数据）上传给 Anthropic，代码会做一定脱敏处理，但仍属于会话内容上传。
-- **Grove / "帮助改善 Claude"**：若用户开启此功能，其编码会话和对话可能被用于模型训练与改进。这一功能的收集范围最广，且直接影响模型训练数据，如对隐私敏感应默认关闭。
+- **Transcript Sharing**: When users submit feedback, the system may upload session records (including raw JSONL data) to Anthropic. The code performs some sanitization, but it still constitutes session content upload.
+- **Grove / "Help Improve Claude"**: If users enable this feature, their coding sessions and conversations may be used for model training and improvement. This feature has the broadest collection scope and directly impacts model training data. If privacy-sensitive, it should be disabled by default.
 
 ---
 
-### 1.7 信息利用综合评估
+### 1.7 Comprehensive Information Usage Assessment
 
-从用户视角，三类被利用的方式如下：
+From the user's perspective, the three types of information usage are as follows:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  层级        │  信息类型            │  用途                          │
+| Layer            | Information Type       | Purpose                          |
 ├─────────────────────────────────────────────────────────────────────┤
-│  模型上下文   │  源码、命令、文件    │  生成回答、编写代码、决策工具调用 │
-│  本地存储     │  transcript、memory  │  会话恢复、长期记忆注入         │
-│  遥测         │  行为元数据、哈希    │  产品分析、稳定性监控、实验分流  │
-│  云同步       │  团队 memory         │  组织知识共享                  │
-│  主动上传     │  transcript、sessions│  模型训练、反馈分析             │
-└─────────────────────────────────────────────────────────────────────┘
+| Model context    | Source code, commands,  | Generate responses, write code,   |
+|                  | files                  | decide tool calls                 |
+| Local storage    | transcript, memory     | Session resume, long-term memory  |
+|                  |                        | injection                         |
+| Telemetry        | Behavioral metadata,   | Product analysis, stability       |
+|                  | hashes                 | monitoring, experiment routing    |
+| Cloud sync       | Team memory            | Organization knowledge sharing    |
+| Active upload    | transcript, sessions   | Model training, feedback analysis |
 ```
 
-**最关键的结论**：真正的风险不在于某个单点的数据打点，而是"进入模型的工作上下文 + 本地长期 memory + 外部同步能力"三者叠加后形成的**信息发散边界**。
+**The most critical conclusion**: The real risk is not a single data point being logged, but the **information diffusion boundary** formed by the combination of "work context entering the model + local long-term memory + external sync capability".
 
 ---
 
-## 第二节：软件代码安全分析
+## Section 2: Software Code Security Analysis
 
-本节分析源码中存在的安全风险点，以及攻击者可能的攻击路径。
+This section analyzes security risk points present in the source code, as well as potential attack paths for attackers.
 
-### 2.1 Prompt Injection（提示词注入）攻击
+### 2.1 Prompt Injection Attacks
 
-**风险描述**：Claude Code 能够读取文件、网页、MCP 工具返回的内容，并将这些内容嵌入模型上下文。如果外部内容中包含精心构造的"指令"，模型可能会错误地执行攻击者的命令。
+**Risk description**: Claude Code can read files, web pages, and content returned by MCP tools, and embed this content into the model's context. If external content contains carefully crafted "instructions", the model may be tricked into executing an attacker's commands.
 
-这类攻击被称为 **Prompt Injection**，在 AI coding agent 场景下尤为危险：攻击者可以在一个开源仓库的代码注释里隐藏指令，当用户让 Claude 阅读这段代码时，Claude 可能被诱导执行恶意操作。
+This type of attack is known as **Prompt Injection**, and is especially dangerous in the AI coding agent scenario: an attacker can hide instructions in the code comments of an open-source repository. When the user asks Claude to read this code, Claude may be induced to perform malicious actions.
 
-**更隐蔽的变种——Unicode 隐写攻击**：攻击者可以使用不可见的 Unicode 字符（用户肉眼看不见，但模型能识别）把指令藏进普通文字中。
+**A more covert variant — Unicode steganography attacks**: Attackers can use invisible Unicode characters (invisible to the human eye but recognizable by the model) to hide instructions within ordinary text.
 
-**源码的应对方案**：
+**The source code's countermeasures**:
 
 ```typescript
 // src/utils/sanitization.ts
@@ -209,19 +210,19 @@ export function partiallySanitizeUnicode(prompt: string): string {
   while (current !== previous && iterations < MAX_ITERATIONS) {
     previous = current
 
-    // Step 1: NFKC 规范化，把"看起来像 A 其实是合成字符"的情况统一化
+    // Step 1: NFKC normalization — unifies characters that "look like A but are composite characters"
     current = current.normalize('NFKC')
 
-    // Step 2: 删除危险的 Unicode 分类字符  
+    // Step 2: Remove dangerous Unicode category characters  
     current = current.replace(/[\p{Cf}\p{Co}\p{Cn}]/gu, '')
 
-    // Step 3: 显式删除已知危险范围（双重保险）
+    // Step 3: Explicitly remove known dangerous ranges (double protection)
     current = current
-      .replace(/[\u200B-\u200F]/g, '')   // 零宽字符
-      .replace(/[\u202A-\u202E]/g, '')   // 方向性格式字符（可用于文字反转欺骗）
-      .replace(/[\u2066-\u2069]/g, '')   // 方向隔离字符
-      .replace(/[\uFEFF]/g, '')          // BOM（字节顺序标记）
-      .replace(/[\uE000-\uF8FF]/g, '')   // 私有使用区字符
+      .replace(/[\u200B-\u200F]/g, '')   // Zero-width characters
+      .replace(/[\u202A-\u202E]/g, '')   // Directional formatting characters (can be used for text reversal deception)
+      .replace(/[\u2066-\u2069]/g, '')   // Direction isolation characters
+      .replace(/[\uFEFF]/g, '')          // BOM (Byte Order Mark)
+      .replace(/[\uE000-\uF8FF]/g, '')   // Private Use Area characters
 
     iterations++
   }
@@ -229,42 +230,42 @@ export function partiallySanitizeUnicode(prompt: string): string {
 }
 ```
 
-**新手解读**：
-- `\u200B` 这类字符是"零宽字符"，在屏幕上完全不显示但存在于文本数据中
-- 攻击者曾用这些字符在 MCP 工具返回的内容里隐藏恶意指令（HackerOne 漏洞报告 #3086545）
-- `normalize('NFKC')` 会把"看起来像普通字母但实际上是特殊 Unicode 变体"的字符统一化，防止绕过
-- 整个清洗过程循环执行直到文本不再变化（最多 10 次），防止嵌套混淆
+**For beginners**:
+- Characters like `\u200B` are "zero-width characters" — completely invisible on screen but present in text data
+- Attackers have used these characters to hide malicious instructions in MCP tool return values (HackerOne vulnerability report #3086545)
+- `normalize('NFKC')` unifies characters that "look like normal letters but are actually special Unicode variants" to prevent bypasses
+- The entire cleaning process loops until the text stops changing (max 10 iterations), preventing nested obfuscation
 
-这个清洗函数还有一个递归版本 `recursivelySanitizeUnicode`，能处理 JSON 对象、数组等嵌套结构中的所有字符串字段，确保 MCP 工具的任何返回值都经过清洗。
+This cleaning function also has a recursive version `recursivelySanitizeUnicode` that can handle all string fields in nested structures like JSON objects and arrays, ensuring any return value from MCP tools is sanitized.
 
 ---
 
-### 2.2 Shell 命令注入
+### 2.2 Shell Command Injection
 
-**风险描述**：Claude Code 可以执行 Bash/PowerShell 命令。如果攻击者能让模型生成含有恶意载荷的命令字符串，就可能劫持宿主机。
+**Risk description**: Claude Code can execute Bash/PowerShell commands. If an attacker can make the model generate command strings containing malicious payloads, they could hijack the host machine.
 
-**源码的应对方案——危险模式黑名单**：
+**The source code's countermeasures — dangerous pattern blacklist**:
 
 ```typescript
 // src/utils/permissions/dangerousPatterns.ts
 
 export const DANGEROUS_BASH_PATTERNS: readonly string[] = [
-  // 代码解释器（可运行任意代码）
+  // Code interpreters (can run arbitrary code)
   'python', 'python3', 'node', 'deno', 'ruby', 'perl', 'php',
-  // 包运行器
+  // Package runners
   'npx', 'bunx', 'npm run', 'yarn run',
-  // Shell
+  // Shells
   'bash', 'sh', 'zsh', 'fish',
-  // 危险操作符
+  // Dangerous operators
   'eval', 'exec', 'env', 'xargs', 'sudo',
-  // 远程执行
+  // Remote execution
   'ssh',
 ]
 ```
 
-这个"危险模式"列表的作用是：在 **Auto Mode**（自动批准模式）下，如果权限规则配置为 `Bash(python:*)` 或 `Bash(node:*)` 这类宽泛授权，系统会自动撤销这些规则。原因是这类规则等于"允许 AI 无限制运行任意 Python/Node 脚本"，其危险程度等同于系统管理员权限。
+The function of this "dangerous pattern" list: in **Auto Mode**, if permission rules are configured as broad authorizations like `Bash(python:*)` or `Bash(node:*)`, the system automatically revokes these rules. The reason is that such rules are equivalent to "allowing AI to run arbitrary Python/Node scripts without restriction", with a danger level comparable to system administrator privileges.
 
-相应的检测函数：
+The corresponding detection function:
 
 ```typescript
 // src/utils/permissions/permissionSetup.ts
@@ -275,190 +276,196 @@ export function isDangerousBashPermission(
 ): boolean {
   if (toolName !== BASH_TOOL_NAME) return false
 
-  // 空规则或 * 通配符 = 允许所有命令 = 极度危险
+  // Empty rule or * wildcard = allow all commands = extremely dangerous
   if (ruleContent === undefined || ruleContent === '' || ruleContent === '*') {
     return true
   }
 
   for (const pattern of DANGEROUS_BASH_PATTERNS) {
-    if (content === `${pattern}:*`) return true  // "python:*" 匹配任意 python 命令
-    if (content === `${pattern}*`) return true   // "python*" 匹配 python, python3 等
-    if (content === `${pattern} *`) return true  // "python *" 匹配 python + 任意参数
+    if (content === `${pattern}:*`) return true  // "python:*" matches any python command
+    if (content === `${pattern}*`) return true   // "python*" matches python, python3, etc.
+    if (content === `${pattern} *`) return true  // "python *" matches python + any args
   }
   return false
 }
 ```
 
-**新手解读**：假设用户配置了 `Bash(python:*)` 的权限，意思是"让 Claude 自动批准所有 python 开头的命令"。但这等于给了 AI 一个无限制运行 Python 脚本的权利——可以读写任意文件、发起网络请求。系统检测到这类规则后，在进入自动模式前会把它们临时移除（`stripDangerousPermissionsForAutoMode`），退出自动模式后再恢复（`restoreDangerousPermissions`）。
+**For beginners**: Suppose the user configured permission `Bash(python:*)`, meaning "let Claude auto-approve all commands starting with python". But this gives the AI unlimited rights to run Python scripts — it can read/write any file and make network requests. When the system detects such rules, it temporarily removes them before entering auto mode (`stripDangerousPermissionsForAutoMode`), and restores them after exiting auto mode (`restoreDangerousPermissions`).
 
 ---
 
-### 2.3 Git 逃逸攻击
+### 2.3 Git Escape Attack
 
-**风险描述**：这是一个非常精妙的多阶段攻击。Claude Code 的沙盒内会执行某些命令，但有些 Git 操作发生在沙盒外（宿主机上）。攻击者可以：
+**Risk description**: This is a very sophisticated multi-stage attack. Some commands are executed inside the Claude Code sandbox, but certain Git operations occur outside the sandbox (on the host machine). Attackers can:
 
-1. 在沙盒内创建一个"裸 Git 仓库"的目录结构（含 `HEAD`、`objects/`、`refs/`）
-2. 在这个假仓库中注入带有恶意钩子的 `core.fsmonitor` 配置
-3. 当用户在宿主机（沙盒外）执行 `git log` 等命令时，触发恶意钩子
+1. Create a "bare Git repository" directory structure inside the sandbox (including `HEAD`, `objects/`, `refs/`)
+2. Inject a `core.fsmonitor` configuration with malicious hooks into this fake repository
+3. Trigger the malicious hooks when the user executes commands like `git log` on the host (outside the sandbox)
 
-**源码的应对方案**：
+**The source code's countermeasures**:
 
 ```typescript
 // src/utils/sandbox/sandbox-adapter.ts
 
 function scrubBareGitRepoFiles(directory: string): void {
-  // 命令执行完毕后，强制扫描并清空沙盒内被植入的 Git 裸库文件
-  // 具体清理：HEAD、objects/、refs/ 等核心 Git 目录
+  // After command execution completes, force scan and clean up implanted Git bare repo files
+  // Specifically cleans: HEAD, objects/, refs/ and other core Git directories
 }
 ```
 
-这个函数在每次沙盒命令执行完毕后都会运行，从源头扫除多阶段 Git 逃逸的可能性。
+This function runs after every sandbox command execution, eliminating the possibility of multi-stage Git escape at its source.
 
 ---
 
-### 2.4 MCP 服务器的不可信输入
+### 2.4 Untrusted Input from MCP Servers
 
-**风险描述**：MCP（Model Context Protocol）允许第三方服务器向 Claude 提供工具能力。这意味着一个不受信任的 MCP 服务器可以：
+**Risk description**: MCP (Model Context Protocol) allows third-party servers to provide tool capabilities to Claude. This means an untrusted MCP server can:
 
-- 返回包含恶意指令的"工具结果"
-- 利用上面提到的 Prompt Injection 方式操控 Claude
+- Return "tool results" containing malicious instructions
+- Use the Prompt Injection techniques mentioned above to manipulate Claude
 
-源码在这一层的防御是多重的：
-1. `recursivelySanitizeUnicode` 清洗所有 MCP 返回内容中的 Unicode 危险字符
-2. 独立的权限认证系统（`src/services/mcp/auth.ts`）控制 MCP 工具的访问权限
-3. 沙盒将 MCP 触发的文件写入操作限制在白名单路径内
+The source code's defenses at this layer are multi-layered:
+1. `recursivelySanitizeUnicode` cleans all Unicode dangerous characters from MCP return content
+2. An independent permission authentication system (`src/services/mcp/auth.ts`) controls MCP tool access
+3. The sandbox restricts file write operations triggered by MCP to a whitelist of paths
 
 ---
 
-## 第三节：防范性安全措施
+## Section 3: Preventive Security Measures
 
-本节梳理 Claude Code 为了保护用户机器所构建的多层防线。
+This section outlines the multi-layered defenses built by Claude Code to protect the user's machine.
 
-### 3.1 双重权限闸：应用层 + 系统层
+### 3.1 Dual Permission Gates: Application Layer + System Layer
 
-Claude Code 采用"双闸门"架构，即使一层被突破，另一层仍然有效：
+Claude Code uses a "dual gate" architecture, so even if one layer is breached, the other remains effective:
 
 ```
-AI 发出命令
+AI issues command
     │
     ▼
 ┌─────────────────────────────────────────────────────┐
-│  第一道闸：Tool Permission（应用层逻辑拦截）          │
-│  文件：src/utils/permissions/permissionSetup.ts      │
-│  作用：判断 AI 想执行的操作是否已被用户显式允许       │
-│  拦截方式：对话中弹出确认提示，用户可以选择拒绝       │
+│  First Gate: Tool Permission (application logic      │
+│  interception)                                       │
+│  File: src/utils/permissions/permissionSetup.ts      │
+│  Function: Determine if the AI's desired operation   │
+│  has been explicitly allowed by the user             │
+│  Interception: Pop-up confirmation in the            │
+│  conversation, user can choose to reject             │
 └─────────────────────────────────────────────────────┘
-    │（通过后）
+    │(if passed)
     ▼
 ┌─────────────────────────────────────────────────────┐
-│  第二道闸：Sandbox（系统级隔离）                     │
-│  文件：src/utils/sandbox/sandbox-adapter.ts          │
-│  作用：即使 AI 的命令获得了权限，也只能在隔离环境执行 │
-│  拦截方式：内核级 Namespace 隔离，无法突破文件和网络边界│
+│  Second Gate: Sandbox (system-level isolation)       │
+│  File: src/utils/sandbox/sandbox-adapter.ts          │
+│  Function: Even if the AI's command obtains          │
+│  permission, it can only execute in an isolated      │
+│  environment                                         │
+│  Interception: Kernel-level Namespace isolation,     │
+│  cannot bypass file and network boundaries              │
 └─────────────────────────────────────────────────────┘
-    │（最终执行）
+    │(final execution)
     ▼
-  受限执行环境
+   Restricted execution environment
 ```
 
 ---
 
-### 3.2 Sandbox 沙盒技术详解
+### 3.2 Sandbox Technology Details
 
-**相关源码**：[`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)
+**Related source files**: [`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)
 
-沙盒是整个安全体系的底层基础设施。
+The sandbox is the underlying infrastructure of the entire security system.
 
-**底层引擎**：
+**Underlying engines**:
 
-| 操作系统 | 使用技术 | 原理 |
+| Operating System | Technology Used | Principle |
 |----------|----------|------|
-| Linux / WSL2 | `bubblewrap (bwrap)` + `socat` | 内核 Namespace 隔离 |
-| macOS | 原生沙盒框架 | macOS 系统调用沙盒 |
+| Linux / WSL2 | `bubblewrap (bwrap)` + `socat` | Kernel Namespace isolation |
+| macOS | Native sandbox framework | macOS system call sandbox |
 
-**新手解读 Namespace 隔离**：Linux 的 Namespace 是一种内核功能，让一个进程"看到"的文件系统、网络、进程表等是完全独立的视图。沙盒内的程序就算疯狂写入 `/etc/passwd`，宿主机上的真实文件也完全不受影响——因为沙盒进程根本"看不到"真正的 `/etc/passwd`。
+**For beginners — Namespace isolation**: Linux Namespace is a kernel feature that gives a process a completely independent view of the filesystem, network, process table, etc. Even if a program inside the sandbox frantically writes to `/etc/passwd`, the real file on the host is completely unaffected — because the sandboxed process literally cannot "see" the real `/etc/passwd`.
 
-**白名单驱动的细粒度控制**：沙盒不是把 AI 关在黑屋子里什么都不让做，而是精确控制"哪些路径可以读写，哪些域名可以访问"。
+**Whitelist-driven fine-grained control**: The sandbox doesn't lock the AI in a dark room with no permissions. Instead, it precisely controls "which paths can be read/written, which domains can be accessed".
 
 ```typescript
-// sandbox-adapter.ts 中的核心转换逻辑 (伪代码示意)
+// sandbox-adapter.ts core conversion logic (pseudo-code)
 function convertToSandboxRuntimeConfig(permissions) {
   return {
     filesystem: {
-      allowWrite: [...用户显式允许写入的路径],
-      denyWrite:  [...系统核心路径，如 ~/.claude/settings.json],
-      allowRead:  [...用户显式允许读取的路径],
-      denyRead:   [...敏感配置路径]
+      allowWrite: [...paths explicitly allowed by user for writing],
+      denyWrite:  [...system core paths, e.g. ~/.claude/settings.json],
+      allowRead:  [...paths explicitly allowed by user for reading],
+      denyRead:   [...sensitive config paths]
     },
     network: {
-      allowedDomains:  [...从 WebFetchTool 规则中提取的允许域名],
-      deniedDomains:   [...被拒绝的域名],
-      allowManagedOnly: [...企业管控模式下只允许受管域名]
+      allowedDomains:  [...allowed domains extracted from WebFetchTool rules],
+      deniedDomains:   [...denied domains],
+      allowManagedOnly: [...enterprise managed mode — only managed domains allowed]
     }
   }
 }
 ```
 
-**内置保护白名单**：即使用户自己的配置出了问题，沙盒也会自动保护：
-- `~/.claude/settings.json`（主配置不被篡改）
-- 当前工作目录的 `.claude/` 设置文件
-- `.claude/skills/` 技能目录
+**Built-in protection whitelist**: Even if the user's own config has issues, the sandbox automatically protects:
+- `~/.claude/settings.json` (main config not tampered with)
+- `.claude/` settings file in the current working directory
+- `.claude/skills/` skills directory
 
-**热更新同步**：系统通过 `settingsChangeDetector` 监听宿主机配置文件变化，一旦用户在运行过程中修改权限配置，沙盒内存中的配置也会通过 `refreshConfig()` 实时同步—— AI 无法利用"配置已改但沙盒还用旧规则"的时间窗口逃逸。
+**Hot-reload synchronization**: The system watches host config file changes via `settingsChangeDetector`. When the user modifies permission configuration during runtime, the sandbox's in-memory config is also synchronized in real-time via `refreshConfig()` — the AI cannot exploit the time window of "config has changed but sandbox still uses old rules" to escape.
 
 ---
 
-### 3.3 权限模式分级体系
+### 3.3 Permission Mode Hierarchy
 
-**相关源码**：
+**Related source files**:
 - [`src/utils/permissions/PermissionMode.ts`](../src/utils/permissions/PermissionMode.ts)
 - [`src/utils/permissions/permissionSetup.ts`](../src/utils/permissions/permissionSetup.ts)
 
-系统定义了多种权限模式，从最严格到最宽松：
+The system defines multiple permission modes, from strictest to most permissive:
 
-| 模式 | 说明 | 适用场景 |
+| Mode | Description | Use Case |
 |------|------|----------|
-| `default` | 每次操作前弹出确认 | 日常使用，最安全 |
-| `acceptEdits` | 自动批准文件编辑，命令仍需确认 | 轻度自动化 |
-| `plan` | 只允许规划，不执行任何写操作 | 方案评审 |
-| `auto` | 分类器自动判断是否安全，安全的自动执行 | 高效开发 |
-| `bypassPermissions` | 跳过所有权限检查（危险！） | CI/CD、测试脚本 |
+| `default` | Ask for confirmation before every operation | Daily use, safest |
+| `acceptEdits` | Auto-approve file edits, commands still need confirmation | Light automation |
+| `plan` | Only allow planning, no write operations | Plan review |
+| `auto` | Classifier automatically determines safety, safe ones auto-execute | Efficient development |
+| `bypassPermissions` | Skip all permission checks (dangerous!) | CI/CD, test scripts |
 
-**`bypassPermissions` 的重要保护**：这是最危险的模式。源码中有两层防护：
+**Important protection for `bypassPermissions`**: This is the most dangerous mode. The source code has two layers of protection:
 
 ```typescript
 // src/utils/permissions/bypassPermissionsKillswitch.ts
 
-// 保护一：Statsig 远程开关（组织级管控）
+// Protection 1: Statsig remote kill switch (organization-level control)
 const growthBookDisableBypassPermissionsMode =
   checkStatsigFeatureGate_CACHED_MAY_BE_STALE('tengu_disable_bypass_permissions_mode')
 
-// 保护二：本地设置禁用
+// Protection 2: Local settings disable
 const settingsDisableBypassPermissionsMode =
   settings.permissions?.disableBypassPermissionsMode === 'disable'
 ```
 
-也就是说，企业可以通过远程策略（Statsig 开关）或本地配置，强制禁用 `bypassPermissions` 模式，即使用户在命令行传了 `--dangerously-skip-permissions` 参数也会被忽略并通知用户。
+This means organizations can forcibly disable `bypassPermissions` mode via remote policy (Statsig switch) or local configuration. Even if the user passes `--dangerously-skip-permissions` on the command line, it will be ignored and the user will be notified.
 
 ---
 
-### 3.4 客户端密钥扫描（Secret Scanner）
+### 3.4 Client-Side Secret Scanner
 
-**相关源码**：[`src/services/teamMemorySync/secretScanner.ts`](../src/services/teamMemorySync/secretScanner.ts)
+**Related source files**: [`src/services/teamMemorySync/secretScanner.ts`](../src/services/teamMemorySync/secretScanner.ts)
 
-为了防止用户意外把 API 密钥、访问令牌等敏感凭据上传到 Team Memory 服务，系统内置了一套完整的正则表达式密钥扫描器——在内容离开本地前，先做一遍扫描。
+To prevent users from accidentally uploading API keys, access tokens, and other sensitive credentials to the Team Memory service, the system has a built-in comprehensive regex-based secret scanner — scanning content before it leaves the local machine.
 
-扫描的密钥类型涵盖主流平台，以下是部分规则节选：
+The scanned secret types cover major platforms. Here are some excerpted rules:
 
 ```typescript
 // src/services/teamMemorySync/secretScanner.ts
 
 const SECRET_RULES: SecretRule[] = [
-  // AWS 访问密钥（以 AKIA/ASIA 等前缀开头）
+  // AWS access keys (starting with AKIA/ASIA, etc.)
   { id: 'aws-access-token',
     source: '\\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\\b' },
 
-  // Anthropic 自家 API Key（编译期拼接，避免密文出现在代码里）
+  // Anthropic's own API Key (compile-time concatenation to avoid hard-coded secrets appearing in code)
   { id: 'anthropic-api-key',
     source: `\\b(${ANT_KEY_PFX}03-[a-zA-Z0-9_\\-]{93}AA)(?:...)` },
 
@@ -469,29 +476,29 @@ const SECRET_RULES: SecretRule[] = [
   { id: 'openai-api-key',
     source: '\\b(sk-(?:proj|svcacct|admin)-...' },
 
-  // Stripe、Shopify、Slack、npm、PyPI 等 30+ 种凭据模式
-  // ...（完整列表见源码）
+  // Stripe, Shopify, Slack, npm, PyPI, and 30+ other credential patterns
+  // ... (full list in source code)
 
-  // 私钥文件（PEM 格式）
+  // Private key files (PEM format)
   { id: 'private-key',
     source: '-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY...' },
 ]
 ```
 
-**工程亮点**：
-1. **扫描结果不返回命中文本**：函数 `scanForSecrets` 返回的是"哪条规则命中了"，而非密钥原文，防止扫描本身成为信息泄漏渠道
-2. **Redact 而非拒绝**：`redactSecrets` 函数可以把密钥替换为 `[REDACTED]` 而不是直接报错丢弃，保持上下文可读性
-3. **Anthropic 自家密钥的特殊处理**：`ANT_KEY_PFX` 通过字符串拼接 `['sk', 'ant', 'api'].join('-')` 在运行时构造，避免密钥前缀字面量出现在打包后的 bundle 文件中（防止自动扫描工具误报）
+**Engineering highlights**:
+1. **Scan results don't return matched text**: The `scanForSecrets` function returns "which rule was hit", not the original secret text, preventing the scan itself from becoming an information leak channel
+2. **Redact rather than reject**: The `redactSecrets` function can replace secrets with `[REDACTED]` instead of throwing an error and discarding, maintaining context readability
+3. **Special handling for Anthropic's own keys**: `ANT_KEY_PFX` is constructed at runtime via string concatenation `['sk', 'ant', 'api'].join('-')`, preventing the key prefix literal from appearing in the bundled bundle file (preventing false positives from automated scanning tools)
 
 ---
 
-### 3.5 遥测数据的隐私隔离设计
+### 3.5 Telemetry Data Privacy Isolation Design
 
-**相关源码**：
+**Related source files**:
 - [`src/services/analytics/index.ts`](../src/services/analytics/index.ts)
 - [`src/utils/privacyLevel.ts`](../src/utils/privacyLevel.ts)
 
-**分级隐私控制**：
+**Hierarchical privacy control**:
 
 ```typescript
 // src/utils/privacyLevel.ts
@@ -500,45 +507,46 @@ type PrivacyLevel = 'default' | 'no-telemetry' | 'essential-traffic'
 
 export function getPrivacyLevel(): PrivacyLevel {
   if (process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) {
-    return 'essential-traffic'  // 最严格：关闭一切非必要网络
+    return 'essential-traffic'  // Strictest: disable all non-essential network
   }
   if (process.env.DISABLE_TELEMETRY) {
-    return 'no-telemetry'       // 关闭遥测，保留自动更新等
+    return 'no-telemetry'       // Disable telemetry, keep auto-updates etc.
   }
-  return 'default'              // 全功能开启
+  return 'default'              // Full functionality enabled
 }
 ```
 
-三种级别说明：
+Three levels description:
 
-| 级别 | 关闭内容 |
+| Level | Disabled Content |
 |------|----------|
-| `default` | 全功能开启 |
-| `no-telemetry` | 关闭 Datadog、1P 事件日志、反馈调查 |
-| `essential-traffic` | 在 no-telemetry 基础上，额外关闭自动更新、Grove、Release Notes、Model Capabilities 获取等 |
+| `default` | Full functionality enabled |
+| `no-telemetry` | Disable Datadog, 1P event logging, feedback surveys |
+| `essential-traffic` | On top of no-telemetry, additionally disable auto-updates, Grove, Release Notes, Model Capabilities fetching, etc. |
 
-**PII 路由保护**：遥测数据在发送前，PII（个人身份信息）相关字段会被路由到有访问控制的专属 BigQuery 列，而不会出现在通用的 Datadog 日志流中：
+**PII routing protection**: Before telemetry data is sent, PII (Personal Identifiable Information) related fields are routed to access-controlled dedicated BigQuery columns, rather than appearing in the general Datadog log stream:
 
 ```typescript
 // src/services/analytics/index.ts
 
-// _PROTO_* 前缀的字段是 PII 标记字段，只会出现在有权限的 1P 导出渠道
-// 发送到 Datadog 前必须经过 stripProtoFields 脱敏
+// Fields prefixed with _PROTO_ are PII-marked fields, appearing only in
+// access-controlled 1P export channels. Must be stripped via stripProtoFields
+// before sending to Datadog
 export function stripProtoFields<V>(
   metadata: Record<string, V>,
 ): Record<string, V> {
-  // 删除所有 _PROTO_ 开头的字段，再发给 Datadog
+  // Remove all fields starting with _PROTO_ before sending to Datadog
 }
 ```
 
-**MCP 工具名脱敏**：MCP 工具的名称格式是 `mcp__<server>__<tool>`，其中 server 名可能暴露用户的私有 MCP 服务器配置（视为中等敏感 PII）。上报前会被替换为通用标签 `mcp_tool`：
+**MCP tool name sanitization**: MCP tool names follow the format `mcp__<server>__<tool>`, where the server name may expose the user's private MCP server configuration (considered moderately sensitive PII). Before reporting, it's replaced with the generic label `mcp_tool`:
 
 ```typescript
 // src/services/analytics/metadata.ts
 
 export function sanitizeToolNameForAnalytics(toolName: string) {
   if (toolName.startsWith('mcp__')) {
-    return 'mcp_tool'  // 不暴露用户的 MCP 服务器名称
+    return 'mcp_tool'  // Don't expose user's MCP server names
   }
   return toolName
 }
@@ -546,41 +554,44 @@ export function sanitizeToolNameForAnalytics(toolName: string) {
 
 ---
 
-### 3.6 路径安全验证
+### 3.6 Path Security Validation
 
-**相关源码**：
+**Related source files**:
 - [`src/utils/permissions/pathValidation.ts`](../src/utils/permissions/pathValidation.ts)
 - [`src/utils/permissions/filesystem.ts`](../src/utils/permissions/filesystem.ts)
 
-系统对所有文件路径操作进行了防御性校验，防止 **Path Traversal**（路径穿越）攻击——一种通过 `../../etc/passwd` 类似的路径绕过限制目录的攻击手法。
+The system performs defensive validation on all file path operations to prevent **Path Traversal** attacks — an attack technique that bypasses restricted directories using paths like `../../etc/passwd`.
 
-Team Memory 同步的路径保护在 `secretScanner.ts` 中有专门的 path traversal 防护，确保即使 MCP 或 AI 尝试操作类似 `../../../important_file` 的路径，也会被拦截。
+Team Memory sync path protection in `secretScanner.ts` has dedicated path traversal prevention, ensuring that even if MCP or AI attempts to operate on paths like `../../../important_file`, they will be intercepted.
 
 ---
 
-## 本章小结
+## Chapter Summary
 
-Claude Code 的安全架构可以用一个同心圆来理解：
+Claude Code's security architecture can be understood as a set of concentric circles:
 
 ```
                     ┌──────────────────────────────────┐
-                    │     遥测隐私隔离 + 密钥扫描       │  ← 数据出境防线
+                    │   Telemetry privacy isolation +    │  ← Data egress defense
+                    │   Secret scanning                  │
                  ┌──┼──────────────────────────────────┼──┐
-                 │  │       权限模式分级管控             │  │ ← 策略防线
+                 │  │     Permission mode hierarchy      │  │ ← Policy defense
               ┌──┼──┼──────────────────────────────────┼──┼──┐
-              │  │  │   Tool Permission 应用层拦截       │  │  │ ← 应用防线
+              │  │  │  Tool Permission application layer │  │  │ ← Application defense
+              │  │  │  interception                      │  │  │
            ┌──┼──┼──┼──────────────────────────────────┼──┼──┼──┐
-           │  │  │  │       Sandbox 系统级隔离           │  │  │  │ ← 底层防线
-           │  │  │  │  Unicode 清洗 / 路径校验           │  │  │  │
+           │  │  │  │     Sandbox system-level isolation  │  │  │  │ ← Foundation defense
+           │  │  │  │  Unicode sanitization / path        │  │  │  │
+           │  │  │  │  validation                         │  │  │  │
            └──┼──┼──┼──────────────────────────────────┼──┼──┼──┘
               └──┼──┼──────────────────────────────────┼──┼──┘
                  └──┼──────────────────────────────────┼──┘
                     └──────────────────────────────────┘
                                    │
-                              宿主机（受保护）
+                              Host (protected)
 ```
 
-**总体评价**：
-- Claude Code **绝非**零风险产品——进入模型的上下文是最大的信息泄漏界面，这是此类产品的结构性特征，无法通过关闭遥测来规避
-- 但工程团队在安全防护方面投入了相当多的精力：双重权限闸、沙盒隔离、密钥扫描、Unicode 清洗、危险模式拦截等机制都有扎实的源码实现
-- 对用户来说，**最有效的安全措施**是：了解哪些内容会进入模型上下文，并主动控制输入的边界
+**Overall assessment**:
+- Claude Code is **by no means** a zero-risk product — the context entering the model is the largest information leakage surface, which is a structural characteristic of this type of product and cannot be avoided by simply disabling telemetry
+- However, the engineering team has invested considerable effort in security protection: dual permission gates, sandbox isolation, secret scanning, Unicode sanitization, dangerous pattern interception, and other mechanisms all have solid source code implementations
+- For users, **the most effective security measure** is: understanding what content enters the model context, and actively controlling the boundaries of what is input

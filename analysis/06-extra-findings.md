@@ -1,39 +1,39 @@
-# 第十三章：深度发现与边界案例分析
+# Chapter 13: Deep Findings and Edge Case Analysis
 
-[返回总目录](../README.md)
-
----
-
-## 1. 导读
-
-本章记录三类在常规文档中被忽略的深层机制：
-
-1. **Trust 边界的程序化处理**：配置文件如何被分级信任，以及如何防止"配置文件本身是攻击面"
-2. **Swarm 全局状态桥**：多 agent 架构中的上下文同步问题
-3. **隐私耦合的主动切断设计**：分析系统如何从架构层面防止 PII 意外泄漏
+[Back to Table of Contents](../README.md)
 
 ---
 
-## 2. Trust 边界的程序化处理
+## 1. Chapter Guide
 
-### 2.1 CLAUDE.md 的分级信任模型
+This chapter documents three types of deep mechanisms overlooked in conventional documentation:
 
-**文件**：[`src/utils/claudemd.ts`](../src/utils/claudemd.ts)
+1. **Programmatic Handling of Trust Boundaries**: How configuration files are trusted at different levels, and how to prevent "the configuration file itself is an attack surface"
+2. **Swarm Global State Bridge**: Context synchronization issues in multi-agent architecture
+3. **Privacy Coupling Proactive Disconnection Design**: How the analysis system prevents accidental PII leakage at the architectural level
 
-CLAUDE.md 并不是一个扁平系统——它有四个信任层级，各自拥有不同的 scope 和 mount 优先级：
+---
 
-| 类型 | 路径 | 信任级别 |
-|------|------|----------|
-| `Managed` | `/etc/claude-code/CLAUDE.md` | 最高（系统管理员） |
-| `User` | `~/.claude/CLAUDE.md` | 高（用户全局） |
-| `Project` | `{cwd}/CLAUDE.md`, `{cwd}/.claude/CLAUDE.md` | 中（项目约定） |
-| `Local` | `.claude/rules/*.md` | 最低（本地约定） |
+## 2. Programmatic Handling of Trust Boundaries
 
-这个分级的实现由 `getClaudeMds()` 并行加载所有层级后合并，优先级体现在系统 prompt 的拼接顺序上（高信任优先）。
+### 2.1 CLAUDE.md Tiered Trust Model
 
-### 2.2 `@include` 的深度限制
+**File**: [`src/utils/claudemd.ts`](../src/utils/claudemd.ts)
 
-`CLAUDE.md` 支持 `@include <path>` 引入外部文件，但有硬上限保护：
+CLAUDE.md is not a flat system -- it has four trust levels, each with different scope and mount priority:
+
+| Type | Path | Trust Level |
+|------|------|-------------|
+| `Managed` | `/etc/claude-code/CLAUDE.md` | Highest (system admin) |
+| `User` | `~/.claude/CLAUDE.md` | High (user global) |
+| `Project` | `{cwd}/CLAUDE.md`, `{cwd}/.claude/CLAUDE.md` | Medium (project convention) |
+| `Local` | `.claude/rules/*.md` | Lowest (local convention) |
+
+This hierarchy is implemented by `getClaudeMds()` loading all levels in parallel before merging, with priority reflected in the system prompt concatenation order (higher trust first).
+
+### 2.2 `@include` Depth Limit
+
+`CLAUDE.md` supports `@include <path>` to import external files, but has a hard upper limit:
 
 ```typescript
 // src/utils/claudemd.ts:537
@@ -47,19 +47,19 @@ export async function processMemoryFile(
   includeExternal: boolean,
   depth: number = 0,
 ): Promise<MemoryFileInfo[]> {
-  // 去重：跳过已处理过的路径（防循环引用）
-  // 深度限制：超过 5 层即截断
+  // Deduplication: skip already processed paths (prevents circular references)
+  // Depth limit: truncates beyond 5 levels
   const normalizedPath = normalizePathForComparison(filePath)
   if (processedPaths.has(normalizedPath) || depth >= MAX_INCLUDE_DEPTH) {
-    return []  // 静默截断，不报错
+    return []  // Silent truncation, no error
   }
 
-  // 排除列表：claudeMdExcludes 设置可显式排除特定路径
+  // Exclusion list: claudeMdExcludes can explicitly exclude specific paths
   if (isClaudeMdExcluded(filePath, type)) {
     return []
   }
 
-  // 解析 symlink（用于路径去重，防止 /tmp -> /private/tmp 的重复加载）
+  // Resolve symlink (for path deduplication, preventing duplicate loading of /tmp -> /private/tmp)
   const { resolvedPath, isSymlink } = safeResolvePath(getFsImplementation(), filePath)
   processedPaths.add(normalizedPath)
   if (isSymlink) {
@@ -69,50 +69,50 @@ export async function processMemoryFile(
 }
 ```
 
-`MAX_INCLUDE_DEPTH = 5` 是防御性设计：阻止恶意 CLAUDE.md 通过嵌套 `@include` 构造无限递归导致进程崩溃（原始的 DoS 缓解）。
+`MAX_INCLUDE_DEPTH = 5` is a defensive design: prevents malicious CLAUDE.md from constructing infinite recursion through nested `@include` causing process crashes (original DoS mitigation).
 
-### 2.3 Trust 建立时序：为什么 Telemetry 初始化在 Trust 之后
+### 2.3 Trust Establishment Timing: Why Telemetry Initializes After Trust
 
-**文件**：[`src/entrypoints/init.ts`](../src/entrypoints/init.ts)，[`src/main.tsx`](../src/main.tsx)
+**Files**: [`src/entrypoints/init.ts`](../src/entrypoints/init.ts), [`src/main.tsx`](../src/main.tsx)
 
-这是一个容易忽略的安全细节：
+This is an easily overlooked security detail:
 
 ```typescript
-// src/main.tsx（伪代码骨架）
+// src/main.tsx (pseudocode skeleton)
 export async function main(argv) {
-  await init(argv)   // ① Trust 前：只应用安全 env var，不发 telemetry 事件
+  await init(argv)   // ① Before trust: only safe env vars applied, no telemetry events sent
 
-  // ... 建立 trust（用户确认、检查配置文件 includes）...
+  // ... establish trust (user confirmation, check config file includes) ...
 
-  await initializeTelemetryAfterTrust()  // ② Trust 后：才允许完整 env var 和 telemetry
+  await initializeTelemetryAfterTrust()  // ② After trust: full env vars and telemetry allowed
 }
 ```
 
 ```typescript
 // src/entrypoints/init.ts
 export async function init(argv) {
-  applySafeEnvironmentVariables()    // 只应用白名单内的 env var
-  initTelemetrySkeleton()            // 只注册 sink，不发事件
-  // 不调用 attachAnalyticsSink()
+  applySafeEnvironmentVariables()    // Only whitelisted env vars applied
+  initTelemetrySkeleton()            // Only registers sink, no events sent
+  // Does not call attachAnalyticsSink()
 }
 
 export async function initializeTelemetryAfterTrust() {
-  applyFullEnvironmentVariables()    // Trust 通过后才应用全部 env var
-  attachAnalyticsSink()              // 开始处理队列中的 telemetry 事件
+  applyFullEnvironmentVariables()    // Apply all env vars only after trust is established
+  attachAnalyticsSink()              // Start processing queued telemetry events
 }
 ```
 
-**设计逻辑**：如果 CLAUDE.md 本身（或它引用的外部文件）是攻击面，那么在 trust 建立之前的 env var 就可能被恶意注入。通过推迟应用完整 env var 到 trust 建立之后，系统极大缩小了"配置文件作为攻击面"的窗口期。
+**Design Logic**: If CLAUDE.md itself (or the external files it references) is an attack surface, then env vars applied before trust establishment could be maliciously injected. By deferring full env var application until after trust is established, the system significantly narrows the window where "configuration files as attack surface" can be exploited.
 
 ---
 
-## 3. Unicode 隐写攻击防御
+## 3. Unicode Steganography Attack Defense
 
-### 3.1 攻击模型
+### 3.1 Attack Model
 
-**文件**：[`src/utils/sanitization.ts`](../src/utils/sanitization.ts)
+**File**: [`src/utils/sanitization.ts`](../src/utils/sanitization.ts)
 
-文件顶部注释明确记录了攻击向量（这是罕见的在生产代码里直接引用 CVE/HackerOne 报告的案例）：
+The file header comment clearly documents the attack vectors (a rare case of directly referencing CVE/HackerOne reports in production code):
 
 ```typescript
 // src/utils/sanitization.ts
@@ -130,7 +130,7 @@ export async function initializeTelemetryAfterTrust() {
  */
 ```
 
-### 3.2 防御实现：`partiallySanitizeUnicode()`
+### 3.2 Defense Implementation: `partiallySanitizeUnicode()`
 
 ```typescript
 // src/utils/sanitization.ts:25
@@ -138,27 +138,27 @@ export function partiallySanitizeUnicode(prompt: string): string {
   let current = prompt
   let previous = ''
   let iterations = 0
-  const MAX_ITERATIONS = 10  // 防止无限规范化循环
+  const MAX_ITERATIONS = 10  // Prevents infinite normalization loops
 
   while (current !== previous && iterations < MAX_ITERATIONS) {
     previous = current
 
-    // Step 1: NFKC 规范化（处理组合字符序列）
+    // Step 1: NFKC normalization (handles combining character sequences)
     current = current.normalize('NFKC')
 
-    // Step 2: 移除危险 Unicode 属性类（主防线）
+    // Step 2: Remove dangerous Unicode property classes (main defense)
     current = current.replace(/[\p{Cf}\p{Co}\p{Cn}]/gu, '')
-    //   \p{Cf} = Format characters（零宽字符、方向控制符等）
-    //   \p{Co} = Private use area（E000-F8FF 等）
+    //   \p{Cf} = Format characters (zero-width characters, directional control, etc.)
+    //   \p{Co} = Private use area (E000-F8FF, etc.)
     //   \p{Cn} = Unassigned code points
 
-    // Step 3: 显式字符范围（兜底，防止环境不支持 Unicode property class regex）
+    // Step 3: Explicit character ranges (fallback, in case environment doesn't support Unicode property class regex)
     current = current
-      .replace(/[\u200B-\u200F]/g, '')  // 零宽空格、LTR/RTL 标记
-      .replace(/[\u202A-\u202E]/g, '')  // 方向格式化字符
-      .replace(/[\u2066-\u2069]/g, '')  // 方向隔离字符
+      .replace(/[\u200B-\u200F]/g, '')  // Zero-width spaces, LTR/RTL marks
+      .replace(/[\u202A-\u202E]/g, '')  // Directional formatting characters
+      .replace(/[\u2066-\u2069]/g, '')  // Directional isolation characters
       .replace(/[\uFEFF]/g, '')         // UTF-8 BOM
-      .replace(/[\uE000-\uF8FF]/g, '') // 私有使用区（BMP）
+      .replace(/[\uE000-\uF8FF]/g, '') // Private use area (BMP)
 
     iterations++
   }
@@ -172,7 +172,7 @@ export function partiallySanitizeUnicode(prompt: string): string {
 }
 ```
 
-### 3.3 递归结构脱敏：`recursivelySanitizeUnicode()`
+### 3.3 Recursive Structure Sanitization: `recursivelySanitizeUnicode()`
 
 ```typescript
 // src/utils/sanitization.ts:71
@@ -182,36 +182,36 @@ export function recursivelySanitizeUnicode(value: unknown): unknown {
   if (value !== null && typeof value === 'object') {
     const sanitized: Record<string, unknown> = {}
     for (const [key, val] of Object.entries(value)) {
-      // 注意：key 本身也要脱敏（防止 Unicode 污染 key 名）
+      // Note: keys themselves must also be sanitized (preventing Unicode pollution of key names)
       sanitized[recursivelySanitizeUnicode(key) as string] =
         recursivelySanitizeUnicode(val)
     }
     return sanitized
   }
-  return value  // 数字、布尔、null、undefined 原样返回
+  return value  // Numbers, booleans, null, undefined returned as-is
 }
 ```
 
-这个递归脱敏函数被应用于所有 MCP 工具调用的 `input` 字段，是防止 MCP 工具传递隐写数据的最后一道屏障。
+This recursive sanitization function is applied to the `input` field of all MCP tool calls, serving as the last line of defense against MCP tools passing steganographic data.
 
 ---
 
-## 4. Swarm 全局状态桥
+## 4. Swarm Global State Bridge
 
-### 4.1 问题背景
+### 4.1 Problem Background
 
-在多 agent（Swarm）模式下，父 agent 和子 agent 各自维护独立的 `ToolUseContext`。当其中一个 agent 修改了权限或状态，需要有机制让其他 agent 感知到变化。
+In multi-agent (Swarm) mode, parent agents and child agents each maintain their own independent `ToolUseContext`. When one agent modifies permissions or state, a mechanism is needed for other agents to perceive the change.
 
-### 4.2 父 → 子的上下文传播
+### 4.2 Parent → Child Context Propagation
 
 ```typescript
-// src/tools/AgentTool/runAgent.ts（伪代码）
+// src/tools/AgentTool/runAgent.ts (pseudocode)
 export async function runAgent(config: AgentConfig): Promise<void> {
-  // 1. 子 agent 继承父 agent 的 context 快照（值拷贝，非引用）
+  // 1. Child agent inherits parent context snapshot (value copy, not reference)
   const childContext = deepCopy(config.parentContext, {
-    // 子 agent 有独立的 abort controller（父 abort 会级联到子）
+    // Child agent has independent abort controller (parent abort cascades to child)
     abortController: new AbortController(),
-    // 子 agent 的权限是父 agent 权限的子集（不能升权）
+    // Child agent permissions are a subset of parent permissions (cannot escalate)
     toolPermissionContext: restrictToSubset(config.parentContext.toolPermissionContext),
   })
 
@@ -219,22 +219,22 @@ export async function runAgent(config: AgentConfig): Promise<void> {
 }
 ```
 
-### 4.3 子 → 父的反向回流
+### 4.3 Child → Parent Reverse Flowback
 
-子 agent 完成后，需要把状态变更回流到父 context。这通过 `contextModifier` 机制实现：
+After the child agent completes, state changes need to flow back to the parent context. This is implemented through the `contextModifier` mechanism:
 
 ```typescript
-// src/services/tools/toolOrchestration.ts（真实源码节选）
+// src/services/tools/toolOrchestration.ts (actual source code excerpt)
 for await (const update of runToolsConcurrently(blocks, ...)) {
   if (update.contextModifier) {
-    // 并发批次：先收集 contextModifier，等批次完成后按序应用（保证顺序一致）
+    // Concurrent batch: collect contextModifiers, apply in order after batch completion (ensuring order consistency)
     const { toolUseID, modifyContext } = update.contextModifier
     queuedContextModifiers[toolUseID] = modifyContext
   }
   yield { message: update.message, newContext: currentContext }
 }
 
-// 批次结束后统一应用（原子化）
+// Unified application after batch completion (atomic)
 for (const block of blocks) {
   const modifier = queuedContextModifiers[block.id]
   if (modifier) {
@@ -243,55 +243,55 @@ for (const block of blocks) {
 }
 ```
 
-这个"收集 → 批次结束后统一应用"的模式防止了并发 agent 修改 context 时的竞争条件。
+This "collect → apply after batch completion" pattern prevents race conditions when concurrent agents modify context.
 
 ---
 
-## 5. 隐私耦合的主动切断设计
+## 5. Privacy Coupling Proactive Disconnection Design
 
-### 5.1 `AnalyticsMetadata` 类型标注系统
+### 5.1 `AnalyticsMetadata` Type Annotation System
 
-**文件**：[`src/services/analytics/index.ts`](../src/services/analytics/index.ts)，[`src/memdir/memdir.ts`](../src/memdir/memdir.ts)
+**Files**: [`src/services/analytics/index.ts`](../src/services/analytics/index.ts), [`src/memdir/memdir.ts`](../src/memdir/memdir.ts)
 
-这是项目中最独特的隐私工程设计之一。在 TypeScript 里，普通字符串可以轻易被传错参数。项目引入了一个命名极长的类型别名来**强制开发者思考**：
+This is one of the most unique privacy engineering designs in the project. In TypeScript, ordinary strings can easily be passed to the wrong parameter. The project introduces an unusually long type alias to **force developers to think**:
 
 ```typescript
-// 类型定义（精简自源码）
+// Type definition (simplified from source)
 type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS = string
 ```
 
-这个类型只是 `string` 的别名，但它有三个作用：
+This type is just an alias for `string`, but it has three purposes:
 
-1. **强制注意**：函数签名里出现这个类型，开发者被迫意识到"这里的数据会被上报"
-2. **TypeScript 静态检查**：无法把普通 `string` 直接赋值给这个类型（需要 `as` 断言），`as` 是显式的"我已确认"标记
-3. **代码审查钩子**：PR 里只要出现这个类型名，reviewer 知道要格外检查这里是否有敏感数据
+1. **Forced attention**: When this type appears in a function signature, developers are forced to realize "this data will be reported"
+2. **TypeScript static checking**: Cannot directly assign a plain `string` to this type (requires `as` assertion), and `as` is an explicit "I have verified" marker
+3. **Code review hook**: Whenever this type name appears in a PR, reviewers know to pay extra attention to whether sensitive data is present
 
-**真实用例**（来自 `buildMemoryPrompt()` 中的遥测记录）：
+**Actual usage** (from telemetry logging in `buildMemoryPrompt()`):
 
 ```typescript
-// src/memdir/memdir.ts（真实源码节选）
+// src/memdir/memdir.ts (actual source code excerpt)
 logMemoryDirCounts(memoryDir, {
   content_length: t.byteCount,
   line_count:     t.lineCount,
   was_truncated:  t.wasLineTruncated,
-  // 以下字段需要显式 as 断言——这是"我已确认这不是代码或文件路径"的标记
+  // The following fields require explicit as assertion -- this marks "I have verified this is not code or file paths"
   memory_type: memoryType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
 })
 ```
 
-如果开发者尝试直接上报 `memoryDir`（会包含真实文件路径）或 `entrypointContent`（会包含用户的记忆内容），TypeScript 会报错，因为这些是普通 `string`。只有经过验证的元数据字段（如 `'auto'`、`'agent'` 这类枚举值）才能正确通过类型检查。
+If a developer tries to report `memoryDir` (which would contain actual file paths) or `entrypointContent` (which would contain user memory content), TypeScript will error because these are plain `string`s. Only verified metadata fields (like `'auto'`, `'agent'` enum values) can correctly pass type checking.
 
-### 5.2 日志层的脱敏
+### 5.2 Sanitization at the Logging Layer
 
 ```typescript
 // src/utils/sanitization.ts
-// MCP 工具返回值在记录到 transcript 前先经过递归脱敏
+// MCP tool return values undergo recursive sanitization before being recorded in transcript
 const sanitizedResult = recursivelySanitizeUnicode(toolResult.input)
 ```
 
-### 5.3 会话 ID 而非用户 ID
+### 5.3 Session ID Instead of User ID
 
-遥测事件只携带 `sessionId`（UUID），不携带任何用户身份标识：
+Telemetry events only carry `sessionId` (UUID), without any user identity markers:
 
 ```typescript
 // src/bootstrap/state.ts
@@ -301,18 +301,18 @@ export function getSessionId(): string {
   if (!sessionId) sessionId = randomUUID()
   return sessionId
 }
-// 注意：每次进程重启生成新 UUID，不持久化，不关联用户身份
+// Note: New UUID generated on each process restart, not persisted, not linked to user identity
 ```
 
 ---
 
-## 6. 发现总结
+## 6. Findings Summary
 
-| 发现 | 关键文件 | 核心机制 |
-|------|----------|----------|
-| CLAUDE.md 分级信任 | `claudemd.ts` | 四层优先级，`@include` 深度上限 5 |
-| Trust 时序保护 | `init.ts`, `main.tsx` | Telemetry 在 trust 建立后才完全激活 |
-| Unicode 隐写防御 | `sanitization.ts` | NFKC + 范围正则 + 迭代上限 10 |
-| Swarm 状态原子化回流 | `toolOrchestration.ts` | contextModifier 批次收集后统一应用 |
-| PII 类型屏障 | `analytics/index.ts` | `AnalyticsMetadata_I_VERIFIED_...` 强制确认标注 |
-| 无持久用户 ID | `bootstrap/state.ts` | `sessionId = randomUUID()` 每次重启重置 |
+| Finding | Key File | Core Mechanism |
+|---------|----------|----------------|
+| CLAUDE.md tiered trust | `claudemd.ts` | Four priority levels, `@include` depth limit 5 |
+| Trust timing protection | `init.ts`, `main.tsx` | Telemetry fully activates only after trust is established |
+| Unicode steganography defense | `sanitization.ts` | NFKC + range regex + iteration limit 10 |
+| Swarm state atomic flowback | `toolOrchestration.ts` | contextModifier batch collection then unified application |
+| PII type barrier | `analytics/index.ts` | `AnalyticsMetadata_I_VERIFIED_...` forces confirmation annotation |
+| No persistent user ID | `bootstrap/state.ts` | `sessionId = randomUUID()` resets on each restart |

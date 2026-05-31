@@ -163,6 +163,22 @@ function* yieldMissingToolResultBlocks(
  */
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This file is the CORE MAIN LOOP of Claude Code. It implements the agentic
+// execution cycle: assemble context → call Claude API → extract tool_use →
+// execute tools → append results → compact check → loop.
+//
+// The loop outputs an AsyncGenerator<StreamEvent>, making it consumable by:
+// 1. REPL (interactive UI via replLauncher.tsx → screens/REPL.tsx)
+// 2. Headless/SDK (via QueryEngine.ts submitMessage())
+// 3. Subagents (via tools/AgentTool/runAgent.ts)
+//
+// All three runtime modes share this single execution kernel — the key
+// architectural insight that makes Claude Code a unified agent platform
+// rather than a collection of disconnected tools.
+// ============================================================================
+
 /**
  * Is this a max_output_tokens error message? If so, the streaming loop should
  * withhold it from SDK callers until we know whether the recovery loop can
@@ -172,12 +188,25 @@ const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
  *
  * Mirrors reactiveCompact.isWithheldPromptTooLong.
  */
+// ARCHITECTURE NOTE: "Withholding" is a key pattern in the recovery system.
+// Recoverable errors (prompt-too-long, max-output-tokens, media-size) are
+// held back from the stream while recovery mechanisms attempt to fix them.
+// This prevents SDK consumers from prematurely terminating sessions on
+// errors that the system can actually recover from autonomously.
 function isWithheldMaxOutputTokens(
   msg: Message | StreamEvent | undefined,
 ): msg is AssistantMessage {
   return msg?.type === 'assistant' && msg.apiError === 'max_output_tokens'
 }
 
+/**
+ * ARCHITECTURE NOTE: QueryParams is the contract between the execution
+ * kernel and its callers. The three runtime modes (REPL, SDK, subagent)
+ * all construct this same shape, differing only in:
+ * - querySource: 'repl_main_thread' | 'sdk' | 'agent:...' | 'compact' | etc.
+ * - toolUseContext: populated differently (REPL has UI hooks, SDK has structuredIO)
+ * - maxTurns/taskBudget: SDK-only safety limits
+ */
 export type QueryParams = {
   messages: Message[]
   systemPrompt: SystemPrompt

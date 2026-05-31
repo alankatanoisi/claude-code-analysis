@@ -1,28 +1,28 @@
-# 第十章：Multi-Agent 机制与实现细节
+# Chapter 10: Multi-Agent Mechanism and Implementation Details
 
-[返回总目录](../README.md)
+[Back to Table of Contents](../README.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-这一章直接回答一个问题：
+This chapter directly answers one question:
 
-**Claude Code 源码里不但有 multi-agent，而且是三套并存的多 agent 运行模型。**
+**Claude Code's source code not only has multi-agent, but actually contains three coexisting multi-agent operating models.**
 
-不是只有“可以开一个后台子任务”这么简单，而是同时存在：
+It's not just "you can start a background subtask" — three models exist simultaneously:
 
-1. 普通 `subagent`
-2. `coordinator -> workers` 协调器模式
-3. `swarm teammates` 团队协作模式
+1. Normal `subagent`
+2. `coordinator -> workers` coordinator pattern
+3. `swarm teammates` team collaboration pattern
 
-本章重点讲清楚：
+This chapter focuses on explaining:
 
-1. 多 agent 在源码里分成哪几种
-2. `AgentTool` 是如何决定“这是普通 subagent 还是 teammate”
-3. coordinator 模式到底做了什么增强
-4. swarm 模式如何完成 team、mailbox、permission、task list 这几条协作链路
-5. 这套实现相比“单个 agent + background task”到底多了什么
+1. The different types of multi-agent in the source code
+2. How `AgentTool` decides whether something is a normal subagent or a teammate
+3. What enhancements the coordinator mode actually provides
+4. How swarm mode implements the collaboration chain of team, mailbox, permission, and task list
+5. What this implementation adds compared to "single agent + background task"
 
-本章主要依据这些实现：
+This chapter is based on these implementations:
 
 - [`src/tools/AgentTool/AgentTool.tsx`](../src/tools/AgentTool/AgentTool.tsx)
 - [`src/tools/AgentTool/runAgent.ts`](../src/tools/AgentTool/runAgent.ts)
@@ -40,108 +40,108 @@
 - [`src/tools/TaskStopTool/TaskStopTool.ts`](../src/tools/TaskStopTool/TaskStopTool.ts)
 - [`src/utils/swarm/leaderPermissionBridge.ts`](../src/utils/swarm/leaderPermissionBridge.ts)
 
-先给结论：
+TL;DR:
 
-Claude Code 的 multi-agent 不是单一实现，而是一个分层体系：
+Claude Code's multi-agent is not a single implementation but a layered system:
 
 ```text
-一、普通 AgentTool 子代理
-   - 单个主 agent 派出一个 subagent
-   - 可同步、可后台、可 fork
+1. Normal AgentTool Sub-agent
+   - Single main agent dispatches a subagent
+   - Supports sync, background, and fork
 
-二、Coordinator Mode
-   - 主线程变成 coordinator
-   - 通过 AgentTool 持续派出多个 worker
-   - worker 结果用 task-notification 回流
+2. Coordinator Mode
+   - Main thread becomes coordinator
+   - Continuously dispatches multiple workers via AgentTool
+   - Worker results flow back via task-notification
 
-三、Swarm / Teammates
-   - 创建 team
-   - 产生 lead + teammates
-   - 支持 in-process / tmux / iTerm2 后端
-   - 支持 mailbox、权限回流、task list 协作
+3. Swarm / Teammates
+   - Create team
+   - Produce lead + teammates
+   - Supports in-process / tmux / iTerm2 backends
+   - Supports mailbox, permission bridging, task list collaboration
 ```
 
-因此，Claude Code 的 multi-agent 不是“加了个 AgentTool”。
+Therefore, Claude Code's multi-agent is not simply "added an AgentTool."
 
-更准确地说，它做的是一个小型 agent runtime：
+More precisely, it implements a small agent runtime:
 
-- 有 agent 身份模型
-- 有 agent 生成与调度
-- 有 agent 间通信
-- 有 leader / worker 权限桥接
-- 有共享任务平面
-- 有 UI 层 task / teammate 可视化
+- Agent identity model
+- Agent creation and scheduling
+- Inter-agent communication
+- Leader/worker permission bridging
+- Shared task plane
+- UI layer task / teammate visualization
 
-## 2. 总体结构：三种 multi-agent 不是一回事
+## 2. Overall Structure: The Three Multi-Agent Models Are Not the Same
 
-相关实现：
+Related implementations:
 
 - [`src/tools/AgentTool/AgentTool.tsx`](../src/tools/AgentTool/AgentTool.tsx)
 - [`src/coordinator/coordinatorMode.ts`](../src/coordinator/coordinatorMode.ts)
 - [`src/tools/shared/spawnMultiAgent.ts`](../src/tools/shared/spawnMultiAgent.ts)
 
-很多人看到 `AgentTool` 会先得出一个过于简单的结论：
+Many people see `AgentTool` and jump to an oversimplified conclusion:
 
-“Claude Code 只是支持开 subagent。”
+"Claude Code just supports starting subagents."
 
-这不对。
+That's wrong.
 
-源码里至少有下面三种不同层级的多 agent：
+The source code contains at least three distinct levels of multi-agent:
 
-### 2.1 普通 subagent
+### 2.1 Normal Subagent
 
-这是最基础的一层：
+This is the most basic layer:
 
-- 主 agent 调 `AgentTool`
-- 创建一个新的 agent 会话
-- 子 agent 继承部分上下文与工具池
-- 完成后把结果回传给主线程
+- Main agent calls `AgentTool`
+- Creates a new agent session
+- Subagent inherits part of the context and tool pool
+- When done, passes results back to the main thread
 
-这一层更像“后台 worker”。
+This is more like a "background worker."
 
-### 2.2 coordinator mode
+### 2.2 Coordinator Mode
 
-这一层不是“多开几个 subagent”那么简单，而是把主线程角色改写成 coordinator。
+This layer is not simply "spawning multiple subagents" — it redefines the main thread's role as a coordinator.
 
-在 [`src/coordinator/coordinatorMode.ts`](../src/coordinator/coordinatorMode.ts) 中，`getCoordinatorSystemPrompt()` 直接把主线程定义为：
+In [`src/coordinator/coordinatorMode.ts`](../src/coordinator/coordinatorMode.ts), `getCoordinatorSystemPrompt()` directly defines the main thread as:
 
 ```typescript
 You are Claude Code, an AI assistant that orchestrates software engineering tasks across multiple workers.
 ```
 
-也就是说：
+In other words:
 
-- 主线程不再主要负责自己写代码
-- 主线程负责调度多个 worker
-- worker 负责 research / implementation / verification
-- 主线程负责综合结果、继续派工、对用户汇报
+- The main thread is no longer primarily responsible for writing code itself
+- The main thread is responsible for dispatching multiple workers
+- Workers are responsible for research / implementation / verification
+- The main thread is responsible for synthesizing results, continuing to assign work, and reporting to the user
 
-这是一个真正的 orchestrator 模式。
+This is a true orchestrator pattern.
 
-### 2.3 swarm teammates
+### 2.3 Swarm Teammates
 
-swarm 则更进一步。
+Swarm goes a step further.
 
-它不是“临时起几个 worker”，而是显式创建一个 team：
+It's not "temporary workers" — it explicitly creates a team:
 
-- 有 `team_name`
-- 有 lead agent
-- 有 teammate roster
-- 有 inbox / mailbox
-- 有共享 task list
-- 有面向 teammate 的权限回流机制
+- Has `team_name`
+- Has a lead agent
+- Has a teammate roster
+- Has inbox / mailbox
+- Has a shared task list
+- Has a permission bridging mechanism for teammates
 
-这一层已经接近一个轻量“agent 组织系统”。
+This layer approaches a lightweight "agent organization system."
 
-## 3. `AgentTool` 是多 agent 的统一入口
+## 3. `AgentTool` Is the Unified Entry Point for Multi-Agent
 
-相关实现：
+Related implementations:
 
 - [`src/tools/AgentTool/AgentTool.tsx`](../src/tools/AgentTool/AgentTool.tsx)
 
-### 3.1 输入 schema 直接暴露了多 agent 能力
+### 3.1 The Input Schema Directly Exposes Multi-Agent Capabilities
 
-`AgentTool` 的 schema 里有一组非常关键的字段：
+`AgentTool`'s schema contains a critical set of fields:
 
 ```typescript
 const baseInputSchema = z.object({
@@ -159,17 +159,17 @@ const multiAgentInputSchema = z.object({
 })
 ```
 
-这组字段已经说明它不是单纯“开一个执行任务”：
+These fields already show it's not just "run a task":
 
-- `subagent_type` 决定 agent 类型
-- `run_in_background` 决定同步还是异步
-- `name` 让 agent 可被后续寻址
-- `team_name` 让 agent 进入 swarm / teammate 路径
-- `mode` 让 spawned teammate 继承 plan 等权限模式
+- `subagent_type` determines agent type
+- `run_in_background` determines sync vs async
+- `name` makes the agent addressable later
+- `team_name` directs the agent into the swarm / teammate path
+- `mode` lets the spawned teammate inherit permission modes like plan
 
-### 3.2 `AgentTool` 如何判断是不是 teammate
+### 3.2 How `AgentTool` Determines If Something Is a Teammate
 
-`call()` 里的核心分支非常关键：
+The core branching in `call()` is critical:
 
 ```typescript
 if (teamName && name) {
@@ -187,16 +187,16 @@ if (teamName && name) {
 }
 ```
 
-这段逻辑说明：
+This logic shows:
 
-- 当只有 `subagent_type` / `prompt` 时，它走普通子代理路径
-- 当同时带 `teamName + name` 时，它走 `spawnTeammate()` 路径
+- When only `subagent_type` / `prompt` is provided, it takes the normal subagent path
+- When both `teamName + name` are provided, it takes the `spawnTeammate()` path
 
-也就是说，**同一个 AgentTool 同时承担了普通 subagent 和 teammate spawn 的入口角色。**
+In other words, **the same AgentTool serves as the entry point for both normal subagents and teammate spawning.**
 
-### 3.3 对 teammate 的限制也写在这里
+### 3.3 Restrictions on Teammates Are Also Written Here
 
-同一函数里还有几条非常工程化的约束：
+The same function has several very practical constraints:
 
 ```typescript
 if (isTeammate() && teamName && name) {
@@ -208,33 +208,33 @@ if (isInProcessTeammate() && teamName && run_in_background === true) {
 }
 ```
 
-这说明作者不是简单堆功能，而是在约束多 agent 拓扑：
+This shows the authors didn't just pile on features — they constrained the multi-agent topology:
 
-- teammate 不能无限嵌套 teammate
-- in-process teammate 不能再启动自己的 background agent
+- Teammates cannot infinitely nest other teammates
+- In-process teammates cannot start their own background agents
 
-否则 agent graph 很容易失控。
+Otherwise the agent graph could easily spiral out of control.
 
-## 4. 普通 subagent：本质是“主会话的侧链”
+## 4. Normal Subagent: Essentially a "Side Chain of the Main Session"
 
-相关实现：
+Related implementations:
 
 - [`src/tools/AgentTool/runAgent.ts`](../src/tools/AgentTool/runAgent.ts)
 - [`src/tools/AgentTool/forkSubagent.ts`](../src/tools/AgentTool/forkSubagent.ts)
 
-### 4.1 `runAgent()` 才是真正的 agent 执行器
+### 4.1 `runAgent()` Is the Real Agent Executor
 
-`AgentTool` 更像入口和路由层，真正跑 agent 的是 `runAgent()`。
+`AgentTool` is more like the entry and routing layer — the actual agent execution happens in `runAgent()`.
 
-从实现可以看到几个关键点：
+From the implementation, several key points emerge:
 
-- 它会初始化 agent-specific MCP servers
-- 会构造子 agent 的 `ToolUseContext`
-- 会执行 `executeSubagentStartHooks()`
-- 会把 transcript 写到 sidechain
-- 最后调用 `query()`
+- It initializes agent-specific MCP servers
+- It constructs the sub-agent's `ToolUseContext`
+- It executes `executeSubagentStartHooks()`
+- It writes the transcript to a sidechain
+- Finally it calls `query()`
 
-从源码引用可以看出这条链路：
+The source code reference shows this chain:
 
 ```typescript
 for await (const hookResult of executeSubagentStartHooks(...)) { ... }
@@ -247,18 +247,18 @@ void writeAgentMetadata(agentId, { ... })
 for await (const message of query({ ... })) { ... }
 ```
 
-这说明普通 subagent 不是“主线程里跑个函数”，而是完整复用了 query runtime。
+This shows that a normal subagent is not "running a function in the main thread" — it fully reuses the query runtime.
 
-### 4.2 fork subagent 是特殊变体
+### 4.2 Fork Subagent Is a Special Variant
 
-[`src/tools/AgentTool/forkSubagent.ts`](../src/tools/AgentTool/forkSubagent.ts) 明确写了 fork 模式的规则：
+[`src/tools/AgentTool/forkSubagent.ts`](../src/tools/AgentTool/forkSubagent.ts) clearly defines the rules for fork mode:
 
-- `subagent_type` 省略时触发 implicit fork
-- child 继承 parent 的完整 conversation context
-- child 继承 parent 的 rendered system prompt
-- 所有 fork child 默认后台运行
+- Omitting `subagent_type` triggers implicit fork
+- Child inherits the parent's full conversation context
+- Child inherits the parent's rendered system prompt
+- All fork children run in the background by default
 
-核心注释已经把设计目的说得很明白：
+The key comment explains the design intent clearly:
 
 ```typescript
 When enabled:
@@ -267,11 +267,11 @@ When enabled:
 - All agent spawns run in the background
 ```
 
-### 4.3 为什么 fork 要保留父 prompt 的原始字节
+### 4.3 Why Fork Preserves the Parent Prompt's Raw Bytes
 
-这是一个很重要的技术点。
+This is a significant technical point.
 
-`FORK_AGENT` 的注释写到：
+The `FORK_AGENT` comment notes:
 
 ```typescript
 The getSystemPrompt here is unused: the fork path passes
@@ -279,21 +279,21 @@ The getSystemPrompt here is unused: the fork path passes
 Reconstructing by re-calling getSystemPrompt() can diverge ... and bust the prompt cache
 ```
 
-也就是说，fork child 不是重新生成 system prompt，而是直接拿父会话已经渲染好的 prompt 字节。
+In other words, the fork child doesn't regenerate the system prompt — it directly uses the parent session's already-rendered prompt bytes.
 
-这样做的目的不是逻辑正确性，而是**prompt cache 命中稳定性**。
+The purpose isn't logical correctness but **prompt cache hit stability**.
 
-这表明 multi-agent 实现和 prompt/caching 基础设施是深度耦合的。
+This shows that the multi-agent implementation is deeply coupled with the prompt/caching infrastructure.
 
-## 5. Coordinator Mode：把主线程变成调度器
+## 5. Coordinator Mode: Turning the Main Thread Into a Scheduler
 
-相关实现：
+Related implementations:
 
 - [`src/coordinator/coordinatorMode.ts`](../src/coordinator/coordinatorMode.ts)
 
-### 5.1 coordinator 模式不是工具，而是模式切换
+### 5.1 Coordinator Mode Is Not a Tool, It's a Mode Switch
 
-`isCoordinatorMode()` 的判断来自环境变量：
+`isCoordinatorMode()` checks an environment variable:
 
 ```typescript
 export function isCoordinatorMode(): boolean {
@@ -304,30 +304,30 @@ export function isCoordinatorMode(): boolean {
 }
 ```
 
-这意味着它不是一个普通 slash command，而是运行模式。
+This means it's not a normal slash command — it's a runtime mode.
 
-### 5.2 coordinator system prompt 直接重写主线程身份
+### 5.2 The Coordinator System Prompt Directly Rewrites the Main Thread's Identity
 
-它最关键的部分不是函数逻辑，而是 system prompt：
+Its most critical part isn't function logic but the system prompt:
 
 ```typescript
 You are Claude Code, an AI assistant that orchestrates software engineering tasks across multiple workers.
 ```
 
-随后又给出一套明确操作规范：
+It then provides a clear set of operational rules:
 
-- 用 `Agent` spawn worker
-- 用 `SendMessage` 继续已有 worker
-- 用 `TaskStop` 停止 worker
-- 不要让一个 worker 去检查另一个 worker
-- 要并行 launch 独立 worker
-- 写操作按文件集串行，研究任务可并行
+- Use `Agent` to spawn workers
+- Use `SendMessage` to continue an existing worker
+- Use `TaskStop` to stop a worker
+- Don't have one worker check on another worker
+- Launch independent workers in parallel
+- Serialize write operations by file set, research tasks can be parallel
 
-这说明 coordinator 不是“主 agent 自己决定多派几个 subagent”，而是 prompt 层已经把其角色切成 dispatcher。
+This shows that the coordinator isn't "the main agent deciding to dispatch a few subagents on its own" — the prompt layer has already cut its role into that of a dispatcher.
 
-### 5.3 worker 结果不是 assistant 消息，而是 task notification
+### 5.3 Worker Results Are Not Assistant Messages, but Task Notifications
 
-同文件里定义了 worker 结果回流格式：
+The same file defines the worker result format:
 
 ```xml
 <task-notification>
@@ -339,37 +339,37 @@ You are Claude Code, an AI assistant that orchestrates software engineering task
 </task-notification>
 ```
 
-这点很关键：
+This is a critical point:
 
-- worker 结果被包装成 user-role message
-- coordinator 必须识别 `<task-notification>`
-- coordinator 不能把它当成“普通用户在说话”
+- Worker results are packaged as user-role messages
+- The coordinator must recognize `<task-notification>`
+- The coordinator can't treat it as "a normal user speaking"
 
-所以 coordinator-worker 模式本质上是事件驱动的。
+So the coordinator-worker pattern is fundamentally event-driven.
 
-### 5.4 coordinator 的工作流是显式分相的
+### 5.4 The Coordinator Workflow Is Explicitly Phased
 
-源码把工作流直接定义成：
+The source code defines the workflow directly:
 
-| 阶段 | 执行者 | 目的 |
+| Phase | Executor | Purpose |
 |------|--------|------|
-| Research | Workers | 找文件、理解问题 |
-| Synthesis | Coordinator | 汇总研究结果、设计实现方案 |
-| Implementation | Workers | 按 spec 实施修改 |
-| Verification | Workers | 跑验证 |
+| Research | Workers | Find files, understand the problem |
+| Synthesis | Coordinator | Aggregate research results, design implementation plan |
+| Implementation | Workers | Execute modifications per spec |
+| Verification | Workers | Run validation |
 
-这说明它不是完全自由分工，而是显式鼓励“研究并行、综合集中、实现分派、验证独立”。
+This shows it's not completely free-form division of labor — it explicitly encourages "research parallel, synthesis centralized, implementation dispatched, verification independent."
 
-## 6. Swarm 模式：真正的 team-based multi-agent
+## 6. Swarm Mode: True Team-Based Multi-Agent
 
-相关实现：
+Related implementations:
 
 - [`src/tools/TeamCreateTool/TeamCreateTool.ts`](../src/tools/TeamCreateTool/TeamCreateTool.ts)
 - [`src/tools/shared/spawnMultiAgent.ts`](../src/tools/shared/spawnMultiAgent.ts)
 
-### 6.1 team 是一个显式实体
+### 6.1 Team Is an Explicit Entity
 
-`TeamCreateTool` 会创建真正的 team file：
+`TeamCreateTool` creates an actual team file:
 
 ```typescript
 const teamFile: TeamFile = {
@@ -392,23 +392,23 @@ const teamFile: TeamFile = {
 await writeTeamFileAsync(finalTeamName, teamFile)
 ```
 
-同时它还会：
+It also:
 
-- 重置并创建 task list 目录
-- 设置 leader team name
-- 更新 AppState 中的 `teamContext`
+- Resets and creates the task list directory
+- Sets the leader team name
+- Updates `teamContext` in AppState
 
-因此 swarm 不是“临时内存态”。
+So swarm is not a transient in-memory state.
 
-它至少有三份状态：
+It has at least three pieces of persisted state:
 
 1. `team file`
 2. `task list`
 3. `AppState.teamContext`
 
-### 6.2 `spawnTeammate()` 是 teammate 生成主入口
+### 6.2 `spawnTeammate()` Is the Main Teammate Creation Entry Point
 
-[`src/tools/shared/spawnMultiAgent.ts`](../src/tools/shared/spawnMultiAgent.ts) 暴露了：
+[`src/tools/shared/spawnMultiAgent.ts`](../src/tools/shared/spawnMultiAgent.ts) exposes:
 
 ```typescript
 export async function spawnTeammate(
@@ -419,21 +419,21 @@ export async function spawnTeammate(
 }
 ```
 
-这说明 teammate spawn 已经被抽成共享模块，既能被专门的 team 工具调用，也能被 `AgentTool` 复用。
+This shows that teammate spawning has been extracted into a shared module, callable both by dedicated team tools and reused by `AgentTool`.
 
-从工程上看，这是把“spawn multi-agent”升级成平台能力，而不是局部逻辑。
+From an engineering perspective, this elevates "spawn multi-agent" into a platform capability, not local logic.
 
-## 7. in-process teammate：同进程多 agent
+## 7. In-Process Teammate: Same-Process Multi-Agent
 
-相关实现：
+Related implementations:
 
 - [`src/utils/swarm/spawnInProcess.ts`](../src/utils/swarm/spawnInProcess.ts)
 - [`src/tasks/InProcessTeammateTask/InProcessTeammateTask.tsx`](../src/tasks/InProcessTeammateTask/InProcessTeammateTask.tsx)
 - [`src/utils/swarm/inProcessRunner.ts`](../src/utils/swarm/inProcessRunner.ts)
 
-### 7.1 它不是开新进程，而是用 `AsyncLocalStorage` 隔离上下文
+### 7.1 It Doesn't Start a New Process — It Uses `AsyncLocalStorage` for Context Isolation
 
-`spawnInProcess.ts` 文件头就写得很明确：
+The header of `spawnInProcess.ts` makes it clear:
 
 ```typescript
 Creates and registers an in-process teammate task.
@@ -441,30 +441,30 @@ Unlike process-based teammates (tmux/iTerm2), in-process teammates
 run in the same Node.js process using AsyncLocalStorage for context isolation.
 ```
 
-这是 Claude Code multi-agent 实现里非常有特色的一点。
+This is a very distinctive aspect of Claude Code's multi-agent implementation.
 
-不是所有 teammate 都要 tmux pane，也不是都得起子进程。
+Not every teammate needs a tmux pane, and not everything needs a subprocess.
 
-系统支持：
+The system supports:
 
-- 同一进程里并发多个 teammate
-- 每个 teammate 有独立 identity / context / abortController
-- UI 层把它们当成独立 task 展示
+- Multiple teammates running concurrently in the same process
+- Each teammate has its own identity / context / abortController
+- The UI layer displays them as independent tasks
 
-### 7.2 spawn 时注册的是一个独立 task state
+### 7.2 Spawning Registers an Independent Task State
 
-`spawnInProcessTeammate()` 的核心逻辑可以概括为：
+The core logic of `spawnInProcessTeammate()` can be summarized as:
 
 ```text
-生成 agentId / taskId
-  -> 创建 abortController
-  -> 创建 teammate identity
-  -> 创建 teammateContext
-  -> 构造 InProcessTeammateTaskState
+Generate agentId / taskId
+  -> create abortController
+  -> create teammate identity
+  -> create teammateContext
+  -> construct InProcessTeammateTaskState
   -> registerTask(taskState)
 ```
 
-源码片段：
+Source code snippet:
 
 ```typescript
 const agentId = formatAgentId(name, teamName)
@@ -486,54 +486,54 @@ const taskState: InProcessTeammateTaskState = {
 registerTask(taskState, setAppState)
 ```
 
-说明它在调度系统里的地位和 shell task、local agent task 是同级的。
+This shows it has the same status in the scheduling system as shell tasks and local agent tasks.
 
-### 7.3 teammate 自己也有生命周期与消息队列
+### 7.3 Teammates Have Their Own Lifecycle and Message Queue
 
-`InProcessTeammateTask.tsx` 提供了几类关键操作：
+`InProcessTeammateTask.tsx` provides several key operations:
 
 - `requestTeammateShutdown()`
 - `appendTeammateMessage()`
 - `injectUserMessageToTeammate()`
 - `findTeammateTaskByAgentId()`
 
-这说明 teammate 不只是一次性执行器，而是一个可持续交互对象：
+This shows that a teammate is not a one-shot executor but a continuously interactable object:
 
-- 可以继续发消息
-- 可以切换到 transcript view
-- 可以 shutdown
-- 可以从 `agentId` 反查 task
+- Can receive more messages
+- Can switch to transcript view
+- Can be shut down
+- Can be reverse-looked up by `agentId`
 
-## 8. 通信机制：mailbox + direct resume 双轨制
+## 8. Communication Mechanism: Dual-Track Mailbox + Direct Resume
 
-相关实现：
+Related implementations:
 
 - [`src/utils/teammateMailbox.ts`](../src/utils/teammateMailbox.ts)
 - [`src/tools/SendMessageTool/SendMessageTool.ts`](../src/tools/SendMessageTool/SendMessageTool.ts)
 - [`src/hooks/useInboxPoller.ts`](../src/hooks/useInboxPoller.ts)
 
-Claude Code 里的 agent 间通信并不是单一路径，而是至少有两条：
+Inter-agent communication in Claude Code isn't single-path — there are at least two:
 
-1. mailbox 文件通信
-2. 本地 task / transcript resume
+1. Mailbox file communication
+2. Local task / transcript resume
 
-### 8.1 mailbox：swarm 的文件式 inbox
+### 8.1 Mailbox: Swarm's File-Based Inbox
 
-`teammateMailbox.ts` 文件头直接写明：
+The header of `teammateMailbox.ts` states directly:
 
 ```typescript
 Teammate Mailbox - File-based messaging system for agent swarms
 Each teammate has an inbox file at .claude/teams/{team_name}/inboxes/{agent_name}.json
 ```
 
-它提供的核心能力是：
+It provides these core capabilities:
 
 - `readMailbox()`
 - `readUnreadMessages()`
 - `writeToMailbox()`
 - `markMessageAsReadByIndex()`
 
-其中 `writeToMailbox()` 还带锁文件：
+`writeToMailbox()` also includes a lock file:
 
 ```typescript
 release = await lockfile.lock(inboxPath, {
@@ -542,13 +542,13 @@ release = await lockfile.lock(inboxPath, {
 })
 ```
 
-这说明 mailbox 不是玩具实现，而是考虑了多 agent 并发写入。
+This shows the mailbox is not a toy implementation — it accounts for concurrent multi-agent writes.
 
-### 8.2 `SendMessageTool` 既能发给 teammate，也能继续已有 subagent
+### 8.2 `SendMessageTool` Can Send to Both Teammates and Existing Subagents
 
-`SendMessageTool` 有两种重要路由：
+`SendMessageTool` has two important routing paths.
 
-第一种，继续已有 subagent：
+First, continue an existing subagent:
 
 ```typescript
 const registered = appState.agentNameRegistry.get(input.to)
@@ -565,7 +565,7 @@ const result = await resumeAgentBackground({
 })
 ```
 
-第二种，发到 swarm mailbox：
+Second, send to swarm mailbox:
 
 ```typescript
 await writeToMailbox(
@@ -581,21 +581,21 @@ await writeToMailbox(
 )
 ```
 
-这说明 `SendMessage` 并不是“统一消息 API”，而是一个**消息路由器**：
+This shows that `SendMessage` is not a "unified message API" but a **message router**:
 
-- 如果目标是本地 agentId，就走本地队列或 resume
-- 如果目标是 teammate，就走 mailbox
-- 如果目标是 `*`，还支持 broadcast
+- If the target is a local agentId, use local queue or resume
+- If the target is a teammate, use mailbox
+- If the target is `*`, it also supports broadcast
 
-### 8.3 `useInboxPoller()` 负责把 unread mailbox 消息回灌到执行流
+### 8.3 `useInboxPoller()` Feeds Unread Mailbox Messages Back Into the Execution Flow
 
-`useInboxPoller()` 会周期性：
+`useInboxPoller()` periodically:
 
 ```typescript
 const unread = await readUnreadMessages(agentName, teamName)
 ```
 
-然后按消息类型拆分：
+Then splits by message type:
 
 - permission request
 - permission response
@@ -603,32 +603,32 @@ const unread = await readUnreadMessages(agentName, teamName)
 - plan approval request / response
 - regular teammate messages
 
-这说明 mailbox 传的不是纯文本，而是 agent 协作协议消息。
+This shows that the mailbox doesn't carry plain text — it carries agent collaboration protocol messages.
 
-## 9. 权限机制：leader 为 teammate 兜底
+## 9. Permission Mechanism: Leader Backstops Teammates
 
-相关实现：
+Related implementations:
 
 - [`src/utils/swarm/leaderPermissionBridge.ts`](../src/utils/swarm/leaderPermissionBridge.ts)
 - [`src/utils/swarm/inProcessRunner.ts`](../src/utils/swarm/inProcessRunner.ts)
 - [`src/hooks/useInboxPoller.ts`](../src/hooks/useInboxPoller.ts)
 
-### 9.1 in-process teammate 不是自己弹权限框
+### 9.1 In-Process Teammates Don't Pop Their Own Permission Dialogs
 
-这点很关键。
+This is a critical point.
 
-`leaderPermissionBridge.ts` 提供了 module-level bridge：
+`leaderPermissionBridge.ts` provides a module-level bridge:
 
 ```typescript
 let registeredSetter: SetToolUseConfirmQueueFn | null = null
 let registeredPermissionContextSetter: SetToolPermissionContextFn | null = null
 ```
 
-它允许 REPL 把 leader 的权限 UI setter 暴露出来，供 teammate 使用。
+It allows the REPL to expose the leader's permission UI setter for teammate use.
 
-### 9.2 teammate 权限请求会优先借用 leader 的标准权限弹窗
+### 9.2 Teammate Permission Requests Borrow the Leader's Standard Permission Dialog
 
-`inProcessRunner.ts` 里 `createInProcessCanUseTool()` 的逻辑很清楚：
+The logic in `createInProcessCanUseTool()` in `inProcessRunner.ts` is clear:
 
 ```typescript
 const setToolUseConfirmQueue = getLeaderToolUseConfirmQueue()
@@ -648,39 +648,39 @@ if (setToolUseConfirmQueue) {
 }
 ```
 
-也就是说：
+In other words:
 
-- teammate 自己不拥有独立权限 UI
-- teammate 的 ask 权限会回到 leader 的 ToolUseConfirmQueue
-- UI 上会带 `workerBadge`
+- Teammates don't have their own independent permission UI
+- Teammate ask permissions flow back to the leader's ToolUseConfirmQueue
+- The UI displays a `workerBadge`
 
-这是一种非常务实的实现：
+This is a very pragmatic implementation:
 
-- 避免多份权限 UI
-- 保持用户对整个 swarm 的统一控制
-- 同时又能知道是谁在请求权限
+- Avoids multiple permission UI instances
+- Keeps unified user control over the entire swarm
+- Still allows knowing who is requesting permission
 
-### 9.3 leader bridge 不可用时，退回 mailbox 权限同步
+### 9.3 When Leader Bridge Is Unavailable, Fall Back to Mailbox Permission Sync
 
-同一函数注释也说明，如果 bridge 不可用，会退回 mailbox 路径：
+The same function comment also notes that if the bridge is unavailable, it falls back to the mailbox path:
 
-- 发 permission request 给 leader inbox
-- 等 leader response
-- 再应用回 teammate 上下文
+- Send permission request to leader inbox
+- Wait for leader response
+- Apply back to teammate context
 
-这说明权限机制也做了双轨容灾。
+This shows the permission mechanism also has dual-track disaster recovery.
 
-## 10. 任务协作平面：不是聊天协作，而是 task list 协作
+## 10. Task Collaboration Plane: Not Chat Collaboration, but Task List Collaboration
 
-相关实现：
+Related implementations:
 
 - [`src/tools/TaskCreateTool/TaskCreateTool.ts`](../src/tools/TaskCreateTool/TaskCreateTool.ts)
 - [`src/utils/swarm/inProcessRunner.ts`](../src/utils/swarm/inProcessRunner.ts)
 - [`src/tools/TaskStopTool/TaskStopTool.ts`](../src/tools/TaskStopTool/TaskStopTool.ts)
 
-### 10.1 team 创建时就会绑定 task list
+### 10.1 Team Creation Automatically Binds a Task List
 
-`TeamCreateTool` 里很关键的一段：
+A key segment in `TeamCreateTool`:
 
 ```typescript
 const taskListId = sanitizeName(finalTeamName)
@@ -689,11 +689,11 @@ await ensureTasksDir(taskListId)
 setLeaderTeamName(sanitizeName(finalTeamName))
 ```
 
-也就是说 team 一建立，就自动绑定了一套共享 task list。
+This means as soon as a team is created, a shared task list is automatically bound.
 
-### 10.2 teammate 会主动 claim task
+### 10.2 Teammates Actively Claim Tasks
 
-`inProcessRunner.ts` 中有一个关键函数 `tryClaimNextTask()`：
+There is a key function `tryClaimNextTask()` in `inProcessRunner.ts`:
 
 ```typescript
 const tasks = await listTasks(taskListId)
@@ -704,17 +704,17 @@ const result = await claimTask(taskListId, availableTask.id, agentName)
 await updateTask(taskListId, availableTask.id, { status: 'in_progress' })
 ```
 
-这意味着 teammate 协作不只是“互相发消息”，而是：
+This means teammate collaboration isn't just "sending messages to each other" — it's:
 
-- 有共享任务池
-- agent 可以 claim 未分配任务
-- claim 后立刻更新任务状态
+- A shared task pool
+- Agents can claim unassigned tasks
+- Task status is immediately updated after claiming
 
-这是一个真正的 work queue 设计。
+This is a genuine work queue design.
 
-### 10.3 teammate 的工具池被强制注入 task 协作工具
+### 10.3 Teammate Tool Pools Are Force-Injected with Task Collaboration Tools
 
-`inProcessRunner.ts` 还会把协作必需工具强行塞进 teammate 工具池：
+`inProcessRunner.ts` also forcibly injects essential collaboration tools into the teammate tool pool:
 
 ```typescript
 tools: agentDefinition?.tools
@@ -733,26 +733,26 @@ tools: agentDefinition?.tools
   : ['*']
 ```
 
-这说明 teammate agent 即便是自定义 agent，也会被注入一组 swarm-essential tools。
+This shows that even custom agents are injected with a set of swarm-essential tools.
 
-换句话说，swarm 协作能力属于 runtime contract，不完全由 agent frontmatter 自由决定。
+In other words, swarm collaboration capability is a runtime contract, not entirely determined by agent frontmatter.
 
-### 10.4 停止任务也是统一平面
+### 10.4 Task Stopping Is Also a Unified Plane
 
-`TaskStopTool` 则提供了统一停止入口：
+`TaskStopTool` provides a unified stop entry:
 
-- 输入 `task_id`
-- 校验 task 是否存在且仍在 running
-- 调 `stopTask()`
+- Input `task_id`
+- Validate that the task exists and is still running
+- Call `stopTask()`
 
-这保证了多 agent 并发跑起来后，系统还有统一 kill switch。
+This ensures that once multiple agents are running concurrently, the system still has a unified kill switch.
 
-## 11. Multi-Agent 主链路流程图
+## 11. Multi-Agent Main Chain Flowchart
 
-下面给出一个更接近源码实现的主流程图。
+Below is a main flowchart that more closely reflects the source code implementation.
 
 ```text
-用户 / 主线程
+User / Main Thread
    |
    | AgentTool(description, prompt, subagent_type, name?, team_name?)
    v
@@ -778,36 +778,36 @@ AgentTool.call()
    |                 inProcessRunner -> runAgent()
    |
    +-- else ----------------------------------------------------------+
-                                                                      |
-                                                                      v
-                                                             runAgent()
-                                                                      |
-                                                                      v
-                                                                    query()
-                                                                      |
-                                                                      v
-                                                        task-notification / transcript
+                                                                       |
+                                                                       v
+                                                              runAgent()
+                                                                       |
+                                                                       v
+                                                                     query()
+                                                                       |
+                                                                       v
+                                                         task-notification / transcript
 ```
 
-再看 swarm 内部协作流程：
+Now look at the swarm internal collaboration flow:
 
 ```text
 TeamCreate
-  -> 创建 team file
-  -> 创建 task list
-  -> 建立 leader teamContext
+  -> create team file
+  -> create task list
+  -> establish leader teamContext
 
-teammate 运行
+teammate execution
   -> claimTask()
-  -> 执行任务
+  -> execute task
   -> SendMessage / writeToMailbox
-  -> leader inbox poller 收到消息
-  -> leader 决策 / 权限批准 / 继续派工
+  -> leader inbox poller receives message
+  -> leader decides / approves permissions / continues dispatching
 ```
 
-## 12. 伪代码：核心调度逻辑可以怎么理解
+## 12. Pseudocode: How to Understand the Core Scheduling Logic
 
-### 12.1 `AgentTool` 分流逻辑
+### 12.1 `AgentTool` Routing Logic
 
 ```text
 function agentToolCall(input):
@@ -827,7 +827,7 @@ function agentToolCall(input):
         return runAgent(input)
 ```
 
-### 12.2 in-process teammate 权限桥接逻辑
+### 12.2 In-Process Teammate Permission Bridging Logic
 
 ```text
 function canUseToolAsTeammate(toolRequest):
@@ -848,7 +848,7 @@ function canUseToolAsTeammate(toolRequest):
         return decision
 ```
 
-### 12.3 swarm 任务协作逻辑
+### 12.3 Swarm Task Collaboration Logic
 
 ```text
 function teammateLoop():
@@ -864,59 +864,59 @@ function teammateLoop():
                 notify leader
 ```
 
-## 13. 这套 multi-agent 实现的优点与代价
+## 13. Advantages and Costs of This Multi-Agent Implementation
 
-### 13.1 优点
+### 13.1 Advantages
 
-1. **层级清楚**
-   普通 subagent、coordinator、swarm teammate 三层能力不是混成一团，而是各有职责。
+1. **Clear layering**
+   The three tiers — normal subagent, coordinator, swarm teammate — are not muddled together; each has its own responsibilities.
 
-2. **复用主执行内核**
-   大多数 agent 最终仍走 `runAgent()` / `query()`，不会出现多套推理引擎。
+2. **Reuses the main execution kernel**
+   Most agents ultimately still go through `runAgent()` / `query()`, avoiding multiple inference engines.
 
-3. **通信机制够实用**
-   通过 mailbox、resume、task notification、task list，把协作做成了能落地的工程系统。
+3. **Practical communication mechanisms**
+   Through mailbox, resume, task notification, and task list, collaboration is built into a workable engineering system.
 
-4. **权限有统一入口**
-   teammate 不会偷偷绕过权限体系，而是回流到 leader。
+4. **Unified permission entry point**
+   Teammates cannot silently bypass the permission system — they flow back to the leader.
 
-5. **任务视角明确**
-   team 不是纯聊天机器人群，而是带 task list 的工作队列。
+5. **Clear task perspective**
+   A team is not a pure chat bot group — it's a work queue with a task list.
 
-### 13.2 代价
+### 13.2 Costs
 
-1. **系统复杂度很高**
-   多 agent 已经横跨工具层、任务层、UI 层、权限层、上下文层。
+1. **Very high system complexity**
+   Multi-agent already spans the tool layer, task layer, UI layer, permission layer, and context layer.
 
-2. **状态面很多**
-   transcript、task state、team file、mailbox、AppState、permission queue 都可能参与同一条链路。
+2. **Many state surfaces**
+   Transcript, task state, team file, mailbox, AppState, and permission queue can all participate in the same chain.
 
-3. **调试成本高**
-   问题可能出在 spawn、resume、mailbox、inbox poller、permission bridge 任意一层。
+3. **High debugging cost**
+   Issues can arise in any layer: spawn, resume, mailbox, inbox poller, or permission bridge.
 
-4. **模式很多**
-   同样叫“agent”，但 subagent、worker、teammate、fork child、coordinator 语义并不相同。
+4. **Many patterns**
+   All called "agent," but subagent, worker, teammate, fork child, and coordinator have different semantics.
 
-## 14. 本章小结
+## 14. Chapter Summary
 
-Claude Code 源码中的 multi-agent 不是一个边缘特性，而是完整的系统能力。
+Multi-agent in Claude Code's source code is not an edge feature — it's a complete system capability.
 
-从源码可以看出：
+From the source code we can see:
 
-- `AgentTool` 是统一入口
-- `runAgent()` 是统一执行器
-- `coordinatorMode` 把主线程改造成调度器
-- `spawnTeammate()` 和 swarm 目录把 team 协作做成显式实体
-- `teammateMailbox`、`useInboxPoller`、`leaderPermissionBridge`、task list 则补齐了 agent 间通信、权限和协作平面
+- `AgentTool` is the unified entry point
+- `runAgent()` is the unified executor
+- `coordinatorMode` transforms the main thread into a scheduler
+- `spawnTeammate()` and the swarm directory make team collaboration an explicit entity
+- `teammateMailbox`, `useInboxPoller`, `leaderPermissionBridge`, and the task list complete the inter-agent communication, permission, and collaboration plane
 
-因此更准确的结论是：
+Therefore, a more accurate conclusion is:
 
-**Claude Code 并不是“支持多 agent”，而是已经实现了一套分层的 multi-agent runtime。**
+**Claude Code doesn't just "support multi-agent" — it has already implemented a layered multi-agent runtime.**
 
-它最重要的工程特点有三点：
+Its three most important engineering characteristics are:
 
-1. subagent 与 swarm teammate 并存
-2. coordinator 通过 prompt 明确把自己变成 orchestrator
-3. 团队协作不仅靠消息，还靠任务、权限和持久状态
+1. Subagent and swarm teammate coexist
+2. Coordinator explicitly turns itself into an orchestrator via the prompt
+3. Team collaboration relies not only on messages but also on tasks, permissions, and persistent state
 
-这也是为什么它的 multi-agent 实现，明显超出了“后台起几个子任务”的级别。
+This is why its multi-agent implementation clearly exceeds the level of "starting a few background subtasks."

@@ -1,3 +1,28 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the TRUE ORCHESTRATION CENTER of Claude Code — ~80+ imports,
+// the heaviest module in the codebase. It's where everything comes together:
+//
+// STARTUP SEQUENCE:
+// 1. Side-effects (lines 1-20): MDM prefetch, keychain prefetch, profiler
+//    These run in PARALLEL with the ~135ms of remaining imports.
+// 2. Commander setup: CLI argument parsing with type-safe options
+// 3. Config loading: Global config, policy limits, remote managed settings
+// 4. Auth: OAuth tokens, subscription type, AWS/GCP credentials
+// 5. Bootstrap data: fetchBootstrapData() for session state
+// 6. MCP: connectToServer() for all configured MCP servers
+// 7. Tools: getTools() assembles the full tool pool
+// 8. Skills/Agents: loadSkillsDir(), loadAgentsDir()
+// 9. Telemetry: initializeAnalyticsGates(), GrowthBook
+// 10. REPL launch: launchRepl() starts the Ink rendering loop
+//
+// KEY ARCHITECTURAL PATTERN:
+// main.tsx handles the "setup once, share everywhere" concern. It builds
+// the tool pool, connects MCP servers, loads skills/agents — then passes
+// everything to the REPL or headless mode. The query kernel (query.ts)
+// never does setup; it receives fully-assembled context.
+// ============================================================================
+
 // These side-effects must run before all other imports:
 // 1. profileCheckpoint marks entry before heavy module evaluation begins
 // 2. startMdmRawRead fires MDM subprocesses (plutil/reg query) so they run in

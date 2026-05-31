@@ -1,3 +1,30 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the COORDINATOR MODE — a multi-agent orchestration pattern where
+// the main thread becomes an orchestrator instead of doing work directly.
+//
+// HOW IT WORKS:
+// 1. Main thread gets a rewritten system prompt identifying it as coordinator
+// 2. Coordinator spawns workers via the AgentTool
+// 3. Workers report progress via <task-notification> XML messages
+// 4. Coordinator synthesizes worker outputs into a final result
+//
+// PHASED WORKFLOW:
+// - Research phase: Coordinator spawns research workers
+// - Synthesis phase: Coordinator combines findings
+// - Implementation phase: Coordinator spawns implementation workers
+// - Verification phase: Coordinator spawns verification workers
+//
+// WORKER TOOLS:
+// Workers have access to a SUBSET of tools (ASYNC_AGENT_ALLOWED_TOOLS).
+// Internal-only tools (TeamCreate, TeamDelete, SendMessage, SyntheticOutput)
+// are filtered out to prevent workers from spawning sub-workers.
+//
+// SCRATCHPAD:
+// An optional file-based scratchpad for sharing state between coordinator
+// and workers. Gated behind the tengu_scratch feature flag.
+// ============================================================================
+
 import { feature } from 'bun:bundle'
 import { ASYNC_AGENT_ALLOWED_TOOLS } from '../constants/tools.js'
 import { checkStatsigFeatureGate_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'

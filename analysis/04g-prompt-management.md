@@ -1,21 +1,21 @@
-# 第九章：Prompt 管理机制与实现细节
+# Chapter 9: Prompt Management Mechanism and Implementation Details
 
-[返回总目录](../README.md)
+[Back to Table of Contents](../README.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-这一章直接回答一个核心问题：
+This chapter directly answers one core question:
 
-**Claude Code 的 prompt 不是一段固定字符串，而是一套分层拼装、可缓存、可覆盖、可观测的 prompt 管理系统。**
+**Claude Code's prompt is not a fixed string, but a layered, cacheable, overridable, observable prompt management system.**
 
-本章主要分析四件事：
+This chapter primarily analyzes four things:
 
-1. 默认 system prompt 到底从哪里来
-2. 自定义 prompt、agent prompt、append prompt 是怎么覆盖和叠加的
-3. 哪些上下文其实不在 `prompts.ts`，而是运行时单独注入
-4. compact、session memory、memory extraction 这些“专项 prompt”是如何和主 prompt 系统并存的
+1. Where the default system prompt actually comes from
+2. How custom prompts, agent prompts, and append prompts override and stack
+3. Which context items are not actually in `prompts.ts`, but are injected separately at runtime
+4. How "specialized prompts" like compact, session memory, and memory extraction coexist with the main prompt system
 
-本章主要依据这些实现：
+This chapter is primarily based on these implementations:
 
 - [`src/constants/prompts.ts`](../src/constants/prompts.ts)
 - [`src/utils/systemPrompt.ts`](../src/utils/systemPrompt.ts)
@@ -29,15 +29,15 @@
 - [`src/services/extractMemories/prompts.ts`](../src/services/extractMemories/prompts.ts)
 - [`src/services/api/dumpPrompts.ts`](../src/services/api/dumpPrompts.ts)
 
-先给结论：
+TL;DR:
 
-这个项目没有把 prompt 管理做成“一个 system prompt 文件 + 若干 if else”，而是拆成了 6 层：
+This project does not structure prompt management as "a system prompt file + some if else statements", but splits it into 6 layers:
 
 ```text
-1. 默认主系统提示
+1. Default main system prompt
    src/constants/prompts.ts
 
-2. 有效 system prompt 组装器
+2. Effective system prompt assembler
    src/utils/systemPrompt.ts
    - override
    - coordinator
@@ -45,61 +45,61 @@
    - custom
    - append
 
-3. 运行时上下文注入
+3. Runtime context injection
    src/context.ts
    - CLAUDE.md
    - currentDate
    - git status
    - cache breaker
 
-4. 启动期附加指令入口
+4. Startup additional instruction entry
    src/main.tsx
    - --system-prompt
    - --append-system-prompt
    - systemPromptFile / appendSystemPromptFile
    - proactive / chrome / teammate addendum
 
-5. Prompt 缓存与失效管理
+5. Prompt cache and invalidation management
    src/constants/systemPromptSections.ts
    - section cache
    - dynamic boundary
    - cache break
 
-6. 专项 prompt 家族
-   compact / session memory / extract memories / hooks / insights 等
+6. Specialized prompt family
+   compact / session memory / extract memories / hooks / insights etc.
 ```
 
-所以这里真正管理的不是“prompt 文本”，而是：
+So what is actually managed here is not "prompt text", but:
 
-- 哪些 prompt 属于主循环
-- 哪些 prompt 属于子任务
-- 哪些内容要长期缓存
-- 哪些内容必须逐轮重算
-- 哪些内容允许外部覆盖
-- 哪些内容可以被导出和审计
+- Which prompts belong to the main loop
+- Which prompts belong to subtasks
+- Which content should be cached long-term
+- Which content must be recalculated each round
+- Which content allows external override
+- Which content can be exported and audited
 
-## 2. 总体设计：这不是单 prompt，而是 prompt runtime
+## 2. Overall Design: This Is Not a Single Prompt, But a Prompt Runtime
 
-相关实现：
+Related implementations:
 
 - [`src/constants/prompts.ts`](../src/constants/prompts.ts)
 - [`src/utils/systemPrompt.ts`](../src/utils/systemPrompt.ts)
 - [`src/context.ts`](../src/context.ts)
 
-如果只看文件名，很容易以为 `src/constants/prompts.ts` 就是“完整 prompt”。
+If you only look at the file name, it's easy to assume that `src/constants/prompts.ts` is the "complete prompt".
 
-实际上不是。
+In reality, it is not.
 
-真正送进模型前，大致流程如下：
+The general flow before actually sending to the model is roughly as follows:
 
 ```text
-启动参数 / mode / agent / mcp / settings
+Startup parameters / mode / agent / mcp / settings
                 |
                 v
-getSystemPrompt() 生成默认 system prompt 数组
+getSystemPrompt() generates default system prompt array
                 |
                 v
-buildEffectiveSystemPrompt() 处理优先级覆盖
+buildEffectiveSystemPrompt() handles priority overrides
                 |
                 +---- userContext
                 |       - CLAUDE.md
@@ -110,29 +110,29 @@ buildEffectiveSystemPrompt() 处理优先级覆盖
                         - cacheBreaker
                 |
                 v
-Query / REPL / Compact / Subagent 调用 API
+Query / REPL / Compact / Subagent call API
 ```
 
-也就是说，这个项目里的 “prompt” 至少分成三类：
+In other words, the "prompt" in this project is divided into at least three categories:
 
 1. `system prompt`
-   定义 agent 的身份、规则、工具使用方式和会话级策略。
+   Defines the agent's identity, rules, tool usage, and session-level policies.
 2. `userContext / systemContext`
-   属于额外上下文，不直接写死在 `prompts.ts` 主模板里。
+   Additional context, not hardcoded into the main template of `prompts.ts`.
 3. `task-specific prompts`
-   专门用于 compact、memory extraction、session memory 更新等后台任务。
+   Specifically used for background tasks such as compact, memory extraction, session memory updates, etc.
 
-这一拆分很关键，因为它说明 Claude Code 不是把所有规则都塞进一个超长 system prompt，而是把**常驻规则**、**会话上下文**、**专项任务说明**分开治理。
+This split is very important because it shows that Claude Code does not cram all rules into one super-long system prompt, but separately governs **standing rules**, **session context**, and **specialized task instructions**.
 
-## 3. 默认 system prompt 的源头：`getSystemPrompt()`
+## 3. The Source of the Default System Prompt: `getSystemPrompt()`
 
-相关实现：
+Related implementations:
 
 - [`src/constants/prompts.ts`](../src/constants/prompts.ts)
 
-### 3.1 它返回的不是字符串，而是字符串数组
+### 3.1 It Returns Not a String, But an Array of Strings
 
-`getSystemPrompt()` 的签名是：
+The signature of `getSystemPrompt()` is:
 
 ```typescript
 export async function getSystemPrompt(
@@ -143,15 +143,15 @@ export async function getSystemPrompt(
 ): Promise<string[]>
 ```
 
-这件事本身就说明设计意图：
+This fact alone reveals the design intent:
 
-- system prompt 被拆成多个 section
-- 每个 section 可以单独缓存、单独插拔、单独统计 token
-- 后续还能在 section 级别做 cache boundary 和动态失效
+- The system prompt is split into multiple sections
+- Each section can be independently cached, plugged/unplugged, and token-counted
+- Section-level cache boundaries and dynamic invalidation are possible later
 
-### 3.2 主体结构：静态段 + 动态段
+### 3.2 Main Structure: Static Segments + Dynamic Segments
 
-`getSystemPrompt()` 最重要的返回结构如下：
+The most important return structure of `getSystemPrompt()` is as follows:
 
 ```typescript
 return [
@@ -170,17 +170,17 @@ return [
 ].filter(s => s !== null)
 ```
 
-这段代码非常重要，因为它揭示了主 prompt 的基本工程策略：
+This code is very important because it reveals the basic engineering strategy of the main prompt:
 
-- 前半段是**静态主干**
-- 中间插一个 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`
-- 后半段是**动态 section**
+- The first half is the **static backbone**
+- A `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` is inserted in the middle
+- The second half is **dynamic sections**
 
-换句话说，Claude Code 不是只在“内容层面”写 prompt，而是在“缓存层面”设计 prompt。
+In other words, Claude Code does not write prompts only at the "content level", but designs prompts at the "cache level".
 
-### 3.3 默认 prompt 的静态主干长什么样
+### 3.3 What the Static Backbone of the Default Prompt Looks Like
 
-例如最开头的身份段 `getSimpleIntroSection()` 会返回：
+For example, the opening identity segment `getSimpleIntroSection()` returns:
 
 ```typescript
 return `
@@ -191,27 +191,27 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless ...
 `
 ```
 
-`getSimpleSystemSection()` 又会追加一组基础规则，例如：
+`getSimpleSystemSection()` then appends a set of basic rules, such as:
 
-- 输出给用户的文字如何呈现
-- 工具调用被拒绝后不能原样重试
-- 外部 tool result 可能存在 prompt injection
-- hooks 反馈要视作用户输入
-- 上下文会被自动压缩
+- How text output to the user is presented
+- Tool calls rejected cannot be retried identically
+- External tool results may contain prompt injection
+- Hooks feedback should be treated as user input
+- Context will be automatically compacted
 
-`getSimpleDoingTasksSection()` 则是更偏 coding agent 的工作规则，例如：
+`getSimpleDoingTasksSection()` contains more coding-agent-oriented working rules, such as:
 
-- 不要过度设计
-- 不要额外加注释和类型
-- 读文件后再改代码
-- 遇到失败先诊断再换策略
-- 避免引入安全漏洞
+- Don't over-engineer
+- Don't add extra comments and types
+- Read files before modifying code
+- Diagnose failures before switching strategies
+- Avoid introducing security vulnerabilities
 
-也就是说，默认 system prompt 不是一个短小的身份声明，而是一个非常完整的“执行政策包”。
+In other words, the default system prompt is not a short identity declaration, but a very complete "execution policy package".
 
-### 3.4 动态段是什么
+### 3.4 What Are the Dynamic Segments
 
-`resolvedDynamicSections` 来自这几个 section：
+`resolvedDynamicSections` comes from these sections:
 
 ```typescript
 const dynamicSections = [
@@ -228,25 +228,25 @@ const dynamicSections = [
 ]
 ```
 
-这些 section 和静态主干不同，它们更依赖运行态：
+Unlike the static backbone, these sections are more dependent on runtime state:
 
-- 当前启用的 tools
-- 当前 settings 里的语言偏好
-- 当前模型
-- 当前 mcp server 的 instructions
-- 当前 memory / scratchpad / output style
+- Currently enabled tools
+- Language preference in current settings
+- Current model
+- Current MCP server instructions
+- Current memory / scratchpad / output style
 
-这说明 prompt 系统不是“读取模板并替换变量”，而是“运行时装配一组 section”。
+This shows that the prompt system does not "read a template and replace variables", but "assembles a set of sections at runtime".
 
-## 4. 有效 system prompt 的组装器：`buildEffectiveSystemPrompt()`
+## 4. The Effective System Prompt Assembler: `buildEffectiveSystemPrompt()`
 
-相关实现：
+Related implementations:
 
 - [`src/utils/systemPrompt.ts`](../src/utils/systemPrompt.ts)
 
-真正决定“最后发给模型的 system prompt 长什么样”的，不是 `getSystemPrompt()`，而是 `buildEffectiveSystemPrompt()`。
+What really determines "what the final system prompt sent to the model looks like" is not `getSystemPrompt()`, but `buildEffectiveSystemPrompt()`.
 
-它的注释已经把优先级写得很清楚：
+Its comment already states the priority clearly:
 
 ```typescript
 /**
@@ -259,9 +259,9 @@ const dynamicSections = [
  */
 ```
 
-### 4.1 覆盖优先级
+### 4.1 Override Priority
 
-可以把它翻译成下面这段伪代码：
+It can be translated into the following pseudocode:
 
 ```text
 if overrideSystemPrompt:
@@ -283,16 +283,16 @@ else:
         final += [appendSystemPrompt]
 ```
 
-这里最值得注意的是两点：
+Two points are most noteworthy here:
 
-1. `customSystemPrompt` **不会 append 到默认 prompt 后面**，而是直接替代默认 prompt。
-2. `appendSystemPrompt` 不管前面是什么来源，基本都会被挂到最后。
+1. `customSystemPrompt` **does not append to the default prompt**, but directly replaces it.
+2. `appendSystemPrompt` is basically always appended at the end, regardless of the preceding source.
 
-这两条规则决定了 Claude Code 对“覆写”和“加尾注”的工程区分是很严格的。
+These two rules determine that Claude Code's engineering distinction between "override" and "append" is very strict.
 
-### 4.2 真实函数
+### 4.2 Actual Function
 
-下面是核心逻辑的原始函数片段：
+Below is the original function with the core logic:
 
 ```typescript
 export function buildEffectiveSystemPrompt({
@@ -339,27 +339,27 @@ export function buildEffectiveSystemPrompt({
 }
 ```
 
-这说明 agent prompt 在普通模式下甚至会**取代默认 prompt**，而不是“在默认 prompt 上加一点 agent 设定”。这是一种很强的角色切换。
+This shows that in normal mode, the agent prompt can even **replace the default prompt**, rather than "adding some agent settings on top of the default prompt". This is a very strong role switch.
 
-## 5. 主 prompt 之外的上下文注入：`getUserContext()` 与 `getSystemContext()`
+## 5. Context Injection Outside the Main Prompt: `getUserContext()` and `getSystemContext()`
 
-相关实现：
+Related implementations:
 
 - [`src/context.ts`](../src/context.ts)
 - [`src/utils/queryContext.ts`](../src/utils/queryContext.ts)
 
-Prompt 管理里一个非常容易被忽略的点是：
+A very easily overlooked point in prompt management is:
 
-**有些内容不是 system prompt section，而是单独的 context。**
+**Some content is not a system prompt section, but a separate context.**
 
-### 5.1 `getUserContext()`：用户级上下文
+### 5.1 `getUserContext()`: User-Level Context
 
-`getUserContext()` 返回的内容主要有两个：
+`getUserContext()` primarily returns two things:
 
 1. `claudeMd`
 2. `currentDate`
 
-源码逻辑大致如下：
+The source code logic is roughly:
 
 ```typescript
 const claudeMd = shouldDisableClaudeMd
@@ -372,22 +372,22 @@ return {
 }
 ```
 
-这说明：
+This shows:
 
-- `CLAUDE.md` 并不是 `prompts.ts` 里写死的一段模板
-- 它是运行时扫描、读取、拼接后作为 user context 注入
-- 日期也不是主 prompt 文本的一部分，而是独立字段
+- `CLAUDE.md` is not a hardcoded template in `prompts.ts`
+- It is scanned, read, and concatenated at runtime and injected as user context
+- The date is also not part of the main prompt text, but an independent field
 
-因此，研究 Claude Code 的 prompt 不能只看 `constants/prompts.ts`，还必须把 `context.ts` 算进去。
+Therefore, studying Claude Code's prompt cannot be limited to `constants/prompts.ts`; `context.ts` must also be considered.
 
-### 5.2 `getSystemContext()`：系统级上下文
+### 5.2 `getSystemContext()`: System-Level Context
 
-`getSystemContext()` 主要会追加：
+`getSystemContext()` primarily appends:
 
-- git status 快照
-- cache breaker 注入项
+- Git status snapshot
+- Cache breaker injection
 
-核心逻辑：
+Core logic:
 
 ```typescript
 return {
@@ -398,28 +398,28 @@ return {
 }
 ```
 
-这说明 system context 的职责不是“身份描述”，而是提供**本轮推理必须知道的系统状态**。
+This shows that the responsibility of system context is not "identity description", but providing **system state that must be known for this round of reasoning**.
 
-尤其是 `gitStatus` 这项，非常像“给 coding agent 的环境前情摘要”。
+In particular, `gitStatus` is very much like a "pre-context summary of the environment for the coding agent".
 
-## 6. 运行时入口：外部 prompt 是怎么进入系统的
+## 6. Runtime Entry Points: How External Prompts Enter the System
 
-相关实现：
+Related implementations:
 
 - [`src/main.tsx`](../src/main.tsx)
 
-这一部分决定了 Claude Code 为什么不只是“内置 prompt”，而是“可外部编排的 prompt runtime”。
+This part determines why Claude Code is not just "built-in prompts", but an "externally orchestratable prompt runtime".
 
-### 6.1 CLI 显式入口
+### 6.1 CLI Explicit Entry Points
 
-`main.tsx` 会读取：
+`main.tsx` reads:
 
 - `--system-prompt`
 - `--system-prompt-file`
 - `--append-system-prompt`
 - `--append-system-prompt-file`
 
-例如：
+For example:
 
 ```typescript
 let appendSystemPrompt = options.appendSystemPrompt;
@@ -433,16 +433,16 @@ if (options.appendSystemPromptFile) {
 }
 ```
 
-这意味着用户或上层产品可以：
+This means users or upper-layer products can:
 
-- 完全替换默认 system prompt
-- 或只在默认 prompt 尾部追加一层策略
+- Completely replace the default system prompt
+- Or only append a layer of policy at the end of the default prompt
 
-这是两种完全不同的控制力度。
+These are two completely different levels of control.
 
-### 6.2 启动期自动 addendum
+### 6.2 Startup Automatic Addendum
 
-除了 CLI 参数，系统还会在启动过程中继续往 `appendSystemPrompt` 里塞内容：
+Besides CLI parameters, the system also continues to add content to `appendSystemPrompt` during startup:
 
 - tmux teammate addendum
 - Claude in Chrome system prompt
@@ -451,7 +451,7 @@ if (options.appendSystemPromptFile) {
 - assistant addendum
 - teammate custom agent instructions
 
-例如 proactive mode 会直接追加：
+For example, proactive mode directly appends:
 
 ```typescript
 const proactivePrompt = `
@@ -466,18 +466,18 @@ appendSystemPrompt = appendSystemPrompt
   : proactivePrompt
 ```
 
-所以 `appendSystemPrompt` 在工程上并不是“用户偶尔手动加一句”，而是一个正式的**追加指令总线**。
+So `appendSystemPrompt` is not just "something the user occasionally manually adds", but a formal **appended instruction bus**.
 
-## 7. Prompt 缓存工程：为什么要分 section、为什么要有 boundary
+## 7. Prompt Cache Engineering: Why Sections and Why Boundaries
 
-相关实现：
+Related implementations:
 
 - [`src/constants/systemPromptSections.ts`](../src/constants/systemPromptSections.ts)
 - [`src/constants/prompts.ts`](../src/constants/prompts.ts)
 
-这一套实现最有工程味的地方，就是它把 prompt 当成缓存对象治理。
+The most engineering-flavored aspect of this implementation is that it treats the prompt as a cache-managed object.
 
-### 7.1 `systemPromptSection()`：可缓存 section
+### 7.1 `systemPromptSection()`: Cacheable Section
 
 ```typescript
 export function systemPromptSection(
@@ -488,7 +488,7 @@ export function systemPromptSection(
 }
 ```
 
-### 7.2 `DANGEROUS_uncachedSystemPromptSection()`：显式声明会打断缓存
+### 7.2 `DANGEROUS_uncachedSystemPromptSection()`: Explicitly Declares Cache Break
 
 ```typescript
 export function DANGEROUS_uncachedSystemPromptSection(
@@ -500,14 +500,14 @@ export function DANGEROUS_uncachedSystemPromptSection(
 }
 ```
 
-这类接口设计的意义很直接：
+The meaning of this interface design is very direct:
 
-- 默认 section 都应该缓存
-- 如果你要让某段 prompt 每轮重算，就必须显式声明“这是危险操作”
+- Default sections should all be cached
+- If you want a certain prompt segment to be recalculated every round, you must explicitly declare it as "dangerous operation"
 
-这是一种非常明确的 prompt cache discipline。
+This is a very clear prompt cache discipline.
 
-### 7.3 解析逻辑
+### 7.3 Resolution Logic
 
 ```typescript
 export async function resolveSystemPromptSections(
@@ -528,46 +528,46 @@ export async function resolveSystemPromptSections(
 }
 ```
 
-也就是说，这里缓存的是**section 结果**，不是整个大 prompt 字符串。
+In other words, what is cached here is the **section result**, not the entire large prompt string.
 
 ### 7.4 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`
 
-`prompts.ts` 里专门定义了：
+`prompts.ts` specifically defines:
 
 ```typescript
 export const SYSTEM_PROMPT_DYNAMIC_BOUNDARY =
   '__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__'
 ```
 
-它的作用不是给模型看的，而是给缓存系统看的：
+Its purpose is not for the model to see, but for the caching system:
 
-- boundary 之前尽可能保持稳定
-- boundary 之后允许更多 session 级变化
+- Content before the boundary should remain as stable as possible
+- Content after the boundary allows more session-level variation
 
-这说明 Claude Code 已经把 prompt prefix cache 当成一级工程问题处理了。
+This shows that Claude Code treats prompt prefix cache as a first-class engineering concern.
 
-### 7.5 何时失效
+### 7.5 When Invalidation Occurs
 
-`clearSystemPromptSections()` 会在 `/clear`、`/compact`、worktree 切换等路径被调用。
+`clearSystemPromptSections()` is called on paths like `/clear`, `/compact`, and worktree switching.
 
-这表示 prompt cache 不是永久缓存，而是和“会话生命周期事件”绑定：
+This indicates that the prompt cache is not permanent, but tied to "session lifecycle events":
 
 - clear conversation
 - compact conversation
 - enter / exit worktree
 - resume / restore session
 
-## 8. 主会话里 prompt 是怎么实际组装的
+## 8. How the Prompt Is Actually Assembled in the Main Session
 
-相关实现：
+Related implementations:
 
 - [`src/screens/REPL.tsx`](../src/screens/REPL.tsx)
 - [`src/commands/compact/compact.ts`](../src/commands/compact/compact.ts)
 - [`src/utils/queryContext.ts`](../src/utils/queryContext.ts)
 
-### 8.1 REPL 主路径
+### 8.1 REPL Main Path
 
-在 REPL 中，可以看到这条关键链路：
+In REPL, you can see this critical chain:
 
 ```typescript
 const [defaultSystemPrompt, userContext, systemContext] = await Promise.all([
@@ -585,17 +585,17 @@ const systemPrompt = buildEffectiveSystemPrompt({
 toolUseContext.renderedSystemPrompt = systemPrompt;
 ```
 
-这里很关键：
+This is very important:
 
-- 默认 prompt 和 user/system context 是并行拉取的
-- 最终 system prompt 会被挂到 `toolUseContext.renderedSystemPrompt`
-- 这个字段后面还能被 fork / subagent / resume 逻辑复用
+- The default prompt and user/system context are fetched in parallel
+- The final system prompt is attached to `toolUseContext.renderedSystemPrompt`
+- This field can later be reused by fork / subagent / resume logic
 
-也就是说，prompt 不只是“发送前临时拼一下”，而是 runtime 里会被持久引用的一份状态。
+In other words, the prompt is not just "assembled temporarily before sending", but is a piece of state in the runtime that is persistently referenced.
 
-### 8.2 compact 路径会重新取一遍 cache-safe prompt
+### 8.2 The Compact Path Re-fetches a Cache-Safe Prompt
 
-`/compact` 并不是拿当前界面的 prompt 文本直接去总结，而是重新计算：
+`/compact` does not directly use the current interface's prompt text for summarization; instead, it recalculates:
 
 ```typescript
 const defaultSysPrompt = await getSystemPrompt(...)
@@ -608,30 +608,30 @@ const systemPrompt = buildEffectiveSystemPrompt({
 })
 ```
 
-这说明 compact 本身也依赖 prompt 系统，而且它要拿的是一份**适合共享 cache key 的 prompt 前缀**。
+This shows that compact itself also depends on the prompt system, and it needs a **prompt prefix suitable for shared cache keys**.
 
-### 8.3 非交互 / side question 也能重建 prompt
+### 8.3 Non-Interactive / Side Questions Can Also Rebuild the Prompt
 
-[`src/utils/queryContext.ts`](../src/utils/queryContext.ts) 还提供了 `fetchSystemPromptParts()` 和 `buildSideQuestionFallbackParams()`，说明：
+[`src/utils/queryContext.ts`](../src/utils/queryContext.ts) also provides `fetchSystemPromptParts()` and `buildSideQuestionFallbackParams()`, showing:
 
-- prompt 构造逻辑被抽到共享 helper
-- 即使是 side question / print / SDK resume，也能尽量重建出与主会话一致的 prompt 前缀
+- The prompt construction logic is extracted into a shared helper
+- Even for side questions / print / SDK resume, it can reconstruct a prompt prefix consistent with the main session as much as possible
 
-所以这里的 prompt 管理已经不是 UI 层逻辑，而是 query infrastructure 的一部分。
+So here, prompt management is no longer UI layer logic, but part of the query infrastructure.
 
-## 9. 专项 prompt 家族：主 prompt 之外还有哪些 prompt
+## 9. The Specialized Prompt Family: What Other Prompts Exist Beyond the Main Prompt
 
-相关实现：
+Related implementations:
 
 - [`src/services/compact/prompt.ts`](../src/services/compact/prompt.ts)
 - [`src/services/SessionMemory/prompts.ts`](../src/services/SessionMemory/prompts.ts)
 - [`src/services/extractMemories/prompts.ts`](../src/services/extractMemories/prompts.ts)
 
-主会话 prompt 之外，这个项目还有很多“专项 prompt”。
+Beyond the main session prompt, this project has many "specialized prompts".
 
-### 9.1 compact prompt：强约束、无工具、只产总结
+### 9.1 Compact Prompt: Strong Constraints, No Tools, Only Produce Summaries
 
-compact prompt 一上来就先下死命令：
+The compact prompt starts with hard constraints:
 
 ```typescript
 const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
@@ -643,20 +643,20 @@ const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any too
 `
 ```
 
-这类 prompt 和主 system prompt 的风格完全不同。
+The style of this type of prompt is completely different from the main system prompt.
 
-它不是定义长期身份，而是在单次任务里强力约束输出协议：
+It does not define a long-term identity, but strongly constrains the output protocol in a single task:
 
-- 禁止工具
-- 限制格式
-- 限制轮次
-- 强化总结结构
+- Forbid tools
+- Restrict format
+- Restrict turns
+- Enforce summary structure
 
-也就是说，Claude Code 里“prompt engineering”并不是只服务主 agent，而是服务后台操作协议。
+In other words, "prompt engineering" in Claude Code does not only serve the main agent, but also serves background operation protocols.
 
-### 9.2 session memory prompt：要求只用 Edit 工具更新 notes
+### 9.2 Session Memory Prompt: Only Use the Edit Tool to Update Notes
 
-`SessionMemory/prompts.ts` 的默认 update prompt 也很典型：
+The default update prompt in `SessionMemory/prompts.ts` is also typical:
 
 ```typescript
 Your ONLY task is to use the Edit tool to update the notes file, then stop.
@@ -667,48 +667,48 @@ Do not call any other tools.
 - ONLY update the actual content that appears BELOW ...
 ```
 
-这说明 session memory 更新不是“自由总结”，而是“带模板约束的结构化文档维护任务”。
+This shows that session memory update is not "free-form summarization", but "a structured document maintenance task with template constraints".
 
-### 9.3 memory extraction prompt：限制工具集合与回合策略
+### 9.3 Memory Extraction Prompt: Restricted Tool Set and Round Strategy
 
-`extractMemories/prompts.ts` 也不是简单地说“帮我提取记忆”，而是明确限制：
+`extractMemories/prompts.ts` is not simply "help me extract memories", but clearly restricts:
 
-- 可用工具只有 Read / Grep / Glob / 只读 Bash / Edit / Write
-- 不允许 MCP、Agent、可写 Bash
-- 要先并行读，再并行写
-- 只能使用最近若干消息
-- 禁止再去读源码验证
+- Available tools are only Read / Grep / Glob / Read-only Bash / Edit / Write
+- MCP, Agent, and writable Bash are not allowed
+- Must read in parallel first, then write in parallel
+- Can only use the most recent messages
+- Must not read source code again to verify
 
-这意味着后台 memory agent 的行为并不是模型自由发挥，而是被 prompt 写成了一套轻量协议。
+This means the background memory agent's behavior is not free-form model improvisation, but is written by the prompt into a lightweight protocol.
 
-## 10. 可观测性：这个项目能把 prompt 导出来看
+## 10. Observability: This Project Can Export Prompts for Inspection
 
-相关实现：
+Related implementations:
 
 - [`src/services/api/dumpPrompts.ts`](../src/services/api/dumpPrompts.ts)
 - [`src/commands/context/context-noninteractive.ts`](../src/commands/context/context-noninteractive.ts)
 - [`src/utils/analyzeContext.ts`](../src/utils/analyzeContext.ts)
 
-### 10.1 `dump-prompts`：把 API 请求落到 JSONL
+### 10.1 `dump-prompts`: Write API Requests to JSONL
 
-`createDumpPromptsFetch()` 会拦截请求，把：
+`createDumpPromptsFetch()` intercepts requests and writes:
 
 - init data
 - system update
 - user messages
 - responses
 
-写到：
+To:
 
 ```text
 ~/.claude/dump-prompts/<session-or-agent-id>.jsonl
 ```
 
-这说明 prompt 不只是内部隐式状态，还能被调试、复盘、审计。
+This shows that prompts are not just internal implicit state, but can be debugged, reviewed, and audited.
 
-### 10.2 `/context` 可以统计 system prompt sections token
+### 10.2 `/context` Can Count System Prompt Section Tokens
 
-`analyzeContext.ts` 会把 effective system prompt 拆成 named entries：
+`analyzeContext.ts` splits the effective system prompt into named entries:
 
 ```typescript
 const namedEntries = [
@@ -722,68 +722,68 @@ const namedEntries = [
 ]
 ```
 
-然后逐段算 token。
+Then calculates tokens per segment.
 
-这说明 Claude Code 的 prompt 系统有一个很成熟的“运营侧视角”：
+This shows that Claude Code's prompt system has a very mature "operations perspective":
 
-- 不是只关心 prompt 对不对
-- 还关心 prompt 吃了多少 token
-- 哪一段最贵
-- 哪些段应该继续缓存
+- Not only concerned with whether the prompt is correct
+- But also how many tokens the prompt consumes
+- Which segment is the most expensive
+- Which segments should continue to be cached
 
-## 11. 这套 prompt 管理实现的优点与代价
+## 11. Advantages and Costs of This Prompt Management Implementation
 
-### 11.1 优点
+### 11.1 Advantages
 
-1. **可组合**
-   默认 prompt、agent prompt、append prompt、userContext、systemContext、专项 prompt 可以并行演进。
+1. **Composable**
+   Default prompts, agent prompts, append prompts, userContext, systemContext, and specialized prompts can evolve in parallel.
 
-2. **可缓存**
-   section 化设计 + boundary 让 prompt prefix cache 有工程抓手。
+2. **Cacheable**
+   Section-based design + boundary gives prompt prefix cache an engineering handle.
 
-3. **可扩展**
-   新功能不必改一个超长字符串，只需要新增 section 或 addendum。
+3. **Extensible**
+   New features don't require modifying a super-long string; only need to add a section or addendum.
 
-4. **可调试**
-   通过 `dump-prompts`、`/context`、token 分析，可以看到 prompt 的真实成本。
+4. **Debuggable**
+   Through `dump-prompts`, `/context`, and token analysis, the real cost of prompts can be seen.
 
-5. **可协议化**
-   compact、memory update、memory extraction 都被做成了单任务协议，不容易跑偏。
+5. **Protocolizable**
+   Compact, memory update, and memory extraction are all made into single-task protocols that are hard to deviate from.
 
-### 11.2 代价
+### 11.2 Costs
 
-1. **理解门槛高**
-   只读 `prompts.ts` 会得出错误结论，必须把 `systemPrompt.ts`、`context.ts`、`main.tsx` 一起看。
+1. **High learning curve**
+   Reading only `prompts.ts` leads to incorrect conclusions; `systemPrompt.ts`, `context.ts`, and `main.tsx` must all be considered together.
 
-2. **覆盖关系复杂**
-   `override`、`custom`、`agent`、`append`、`proactive`、`coordinator` 的组合已经比较绕。
+2. **Complex override relationships**
+   The combinations of `override`, `custom`, `agent`, `append`, `proactive`, and `coordinator` are already quite convoluted.
 
-3. **调试难点前移**
-   prompt 问题不一定是模板问题，也可能是 context 注入、section cache、append addendum 或 mode 切换问题。
+3. **Debugging difficulty shifted forward**
+   Prompt issues are not necessarily template problems; they could be context injection, section cache, append addendum, or mode switching issues.
 
-4. **行为依赖 mode**
-   同一个系统在 REPL、compact、subagent、SDK side-question 下，实际拿到的 prompt 形态并不完全一样。
+4. **Behavior depends on mode**
+   The same system in REPL, compact, subagent, and SDK side-question modes will not have exactly the same prompt form.
 
-## 12. 本章小结
+## 12. Chapter Summary
 
-如果把 Claude Code 的 prompt 管理只理解成“`prompts.ts` 里的一大段 system prompt”，那会漏掉最关键的工程部分。
+If you only understand Claude Code's prompt management as "a big system prompt in `prompts.ts`", you will miss the most critical engineering part.
 
-更准确的说法是：
+A more accurate statement is:
 
-- `src/constants/prompts.ts` 负责定义默认主系统提示的 section 集合
-- `src/utils/systemPrompt.ts` 负责做最终优先级合成
-- `src/context.ts` 负责注入运行态上下文
-- `src/main.tsx` 负责接入 CLI 和 feature addendum
-- `src/constants/systemPromptSections.ts` 负责缓存和失效
-- 多个 `services/*/prompts.ts` 负责后台专项任务的 prompt 协议
+- `src/constants/prompts.ts` is responsible for defining the default main system prompt section collection
+- `src/utils/systemPrompt.ts` is responsible for final priority composition
+- `src/context.ts` is responsible for injecting runtime context
+- `src/main.tsx` is responsible for integrating CLI and feature addendum
+- `src/constants/systemPromptSections.ts` is responsible for caching and invalidation
+- Multiple `services/*/prompts.ts` are responsible for specialized task prompt protocols
 
-所以，Claude Code 的 prompt 不是一个文件，而是一套 runtime。
+Therefore, Claude Code's prompt is not a single file, but a runtime.
 
-这也是为什么它能同时做到：
+This is also why it can simultaneously achieve:
 
-- 主会话可持续运行
-- 子任务可切换 prompt 协议
-- 上下文成本可控
-- prompt 可导出、可缓存、可审计
+- Main session sustainable operation
+- Subtasks can switch prompt protocols
+- Context cost is controllable
+- Prompts can be exported, cached, and audited
 
-从工程角度看，这一套实现已经不是“写 prompt”，而是在做 **prompt orchestration**。
+From an engineering perspective, this implementation is no longer "writing prompts", but doing **prompt orchestration**.

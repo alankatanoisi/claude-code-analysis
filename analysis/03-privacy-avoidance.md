@@ -1,140 +1,140 @@
-# 第三章：从用户角度看，如何规避或降低信息收集
+# Chapter 3: How to Avoid or Reduce Information Collection — From the User's Perspective
 
-[返回总目录](../README.md)
+[Back to Table of Contents](../README.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-本章讨论的不是“理论上能否零采集”，而是“用户实际能做哪些事情来降低暴露面”。
+This chapter discusses not "whether zero collection is theoretically possible", but "what users can actually do to reduce the exposure surface".
 
-结论先行：如果用户要最小化暴露，需要同时控制三件事：
+**TL;DR**: If a user wants to minimize exposure, they need to control three things simultaneously:
 
-1. 不让敏感内容进入模型上下文
-2. 不让 transcript / memory 长期落盘
-3. 不开启同步、遥测、分享和远程能力
+1. Don't let sensitive content enter the model context
+2. Don't let transcript / memory persist long-term
+3. Don't enable sync, telemetry, sharing and remote capabilities
 
-## 2. 先分清三类风险
+## 2. First Distinguish Three Types of Risk
 
-要规避信息收集，至少要区分：
+To avoid information collection, at least distinguish between:
 
-1. `发给模型的内容`
-2. `本地持久化的内容`
-3. `上传到外部服务的内容`
+1. `Content sent to the model`
+2. `Content persisted locally`
+3. `Content uploaded to external services`
 
-很多人只盯着第 3 类，但对 coding agent 来说，第 1 类通常更敏感。
+Many people only focus on category 3, but for coding agents, category 1 is typically more sensitive.
 
-## 3. 最有效的技术规避动作
+## 3. Most Effective Technical Avoidance Actions
 
-### 3.1 禁用遥测与非必要网络
+### 3.1 Disable Telemetry and Non-essential Network
 
-相关实现：
+Related implementations:
 
 - [`src/utils/privacyLevel.ts`](../src/utils/privacyLevel.ts)
 
-可用手段：
+Available methods:
 
 - `DISABLE_TELEMETRY`
 - `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
 
-效果区别：
+Difference in effect:
 
-- `DISABLE_TELEMETRY`：主要关闭 telemetry/analytics
-- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`：更严格，关闭非必要网络能力
+- `DISABLE_TELEMETRY`: Primarily disables telemetry/analytics
+- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`: More strict, disables non-essential network capabilities
 
-如果目标是“尽量少出网”，后者更有效。
+If the goal is "minimize network egress", the latter is more effective.
 
-### 3.2 禁用 transcript 持久化
+### 3.2 Disable Transcript Persistence
 
-相关实现：
+Related implementations:
 
 - [`src/main.tsx`](../src/main.tsx)
 - [`src/utils/settings/types.ts`](../src/utils/settings/types.ts)
 - [`src/bootstrap/state.ts`](../src/bootstrap/state.ts)
 
-可用方式：
+Available methods:
 
-- CLI：`--no-session-persistence`
-- 设置：`cleanupPeriodDays: 0`
+- CLI: `--no-session-persistence`
+- Setting: `cleanupPeriodDays: 0`
 
-收益：
+Benefits:
 
-- 不生成可恢复 transcript
-- 降低会话被再次用于 memory、resume、share 的机会
+- No recoverable transcript generated
+- Reduces chances of session being reused for memory, resume, share
 
-### 3.3 关闭 Auto Memory
+### 3.3 Turn Off Auto Memory
 
-相关实现：
+Related implementations:
 
 - [`src/memdir/paths.ts`](../src/memdir/paths.ts)
 
-可用方式：
+Available methods:
 
 - `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`
 - `settings.autoMemoryEnabled = false`
-- `--bare` / SIMPLE 模式
+- `--bare` / SIMPLE mode
 
-收益：
+Benefits:
 
-- 不再自动提取长期记忆
-- 降低“用户画像长期累积”
-- 减少后续 prompt 自动注入 memory
+- No longer automatically extract long-term memory
+- Reduces "long-term user profile accumulation"
+- Reduces subsequent automatic memory injection into prompts
 
-### 3.4 不启用 Team Memory
+### 3.4 Do Not Enable Team Memory
 
-原因：
+Reason:
 
-- team memory 会触发目录监听、pull、push、服务端同步
+- Team memory triggers directory watching, pull, push, server sync
 
-相关实现：
+Related implementations:
 
 - [`src/services/teamMemorySync/index.ts`](../src/services/teamMemorySync/index.ts)
 - [`src/services/teamMemorySync/watcher.ts`](../src/services/teamMemorySync/watcher.ts)
 
-如果用户或团队不希望项目知识被持续同步，应关闭此能力。
+If the user or team does not want project knowledge to be continuously synced, this capability should be disabled.
 
-### 3.5 不启用 Remote / Bridge / Transcript Share
+### 3.5 Do Not Enable Remote / Bridge / Transcript Share
 
-这些功能都会扩大系统边界：
+These features all expand the system boundary:
 
-- `remote-control` / bridge：扩大会话控制面与远程数据面
-- transcript share：直接上传会话内容
+- `remote-control` / bridge: Expands session control plane and remote data plane
+- transcript share: Directly uploads session content
 
-对于隐私敏感场景，应默认关闭。
+For privacy-sensitive scenarios, these should be disabled by default.
 
-## 4. 行为层面的规避建议
+## 4. Behavioral Avoidance Suggestions
 
-即便所有 telemetry 都关了，如果用户把敏感信息直接交给模型，风险依然存在。
+Even if all telemetry is turned off, if the user directly hands sensitive information to the model, the risk still exists.
 
-建议：
+Suggestions:
 
-- 不在 prompt 中直接粘贴密钥、token、私有证书
-- 不把整个 `.env`、生产配置、客户数据文件送入上下文
-- 不让 agent 扫描包含敏感资料的大目录
-- 不把敏感知识写入 auto memory 或 team memory
-- 不在开启 Grove 的状态下处理敏感项目
+- Don't paste keys, tokens, or private certificates directly into prompts
+- Don't send entire `.env`, production config, or customer data files into the context
+- Don't let the agent scan large directories containing sensitive materials
+- Don't write sensitive knowledge into auto memory or team memory
+- Don't process sensitive projects with Grove enabled
 
-## 5. 团队与企业用户的治理建议
+## 5. Governance Suggestions for Teams and Enterprises
 
-如果这是团队使用场景，单个开发者的手动习惯不足以保证收敛，应采用统一策略：
+If this is a team usage scenario, individual developer manual habits are not sufficient to ensure containment. A unified strategy should be adopted:
 
-- 默认关闭 auto memory
-- 默认关闭 team memory
-- `cleanupPeriodDays` 设为 `0` 或很短
-- 默认启用 `essential-traffic`
-- 禁止 remote / bridge
-- 用隔离仓库、脱敏镜像或临时 worktree 运行 agent
+- Disable auto memory by default
+- Disable team memory by default
+- Set `cleanupPeriodDays` to `0` or a very short value
+- Enable `essential-traffic` by default
+- Prohibit remote / bridge
+- Use isolated repositories, sanitized mirrors, or temporary worktrees to run the agent
 
-## 6. 一个现实判断
+## 6. A Realistic Assessment
 
-如果用户的真实目标是：
+If the user's actual goal is:
 
-- 代码绝不离开本机
-- 不进入模型
-- 不形成长期记忆
-- 不产生任何恢复痕迹
+- Code never leaves the local machine
+- Never enters the model
+- No long-term memory formed
+- No trace left for recovery
 
-那这类产品天然不适合作为默认工作方式。
+Then this type of product is inherently unsuitable as a default working method.
 
-最接近这个目标的使用形态只能是：
+The usage mode closest to this goal can only be:
 
 - `--bare`
 - no telemetry
@@ -142,16 +142,16 @@
 - no auto memory
 - no team memory
 - no remote
-- 严格控制输入上下文
+- Strictly control input context
 
-也就是说，本项目可以“降低暴露面”，但并不是“零采集优先”架构。
+In other words, this project can "reduce the exposure surface", but it is not a "zero-collection first" architecture.
 
-## 7. 本章小结
+## 7. Chapter Summary
 
-对用户最实际的规避路线是：
+The most practical avoidance path for users is:
 
-1. 先关闭网络与遥测
-2. 再关闭 transcript 与 memory
-3. 最后控制自己的输入行为
+1. First disable network and telemetry
+2. Then disable transcript and memory
+3. Finally control your own input behavior
 
-如果只做第 1 步而忽略第 2、3 步，隐私收益会远低于预期。
+If only step 1 is done while ignoring steps 2 and 3, the privacy benefits will be far lower than expected.

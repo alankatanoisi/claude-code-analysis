@@ -1,23 +1,23 @@
-# 组件体系详解（四）：组件索引、长尾组件与目录映射
+# Component System Deep Dive (4): Component Index, Long-Tail Components & Directory Mapping
 
-[返回总目录](../../README.md)
+[Back to Table of Contents](../../README.md)
 
-[上一章：平台能力组件](./03-platform-components.md)
+[Previous Chapter: Platform Capability Components](./03-platform-components.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-前面三章已经覆盖了组件体系的主干与关键组件族。本章补齐两个目的：
+The previous three chapters have covered the backbone of the component system and key component families. This chapter fills two purposes:
 
-1. 对没有展开长篇分析的组件目录与顶层组件做归类说明。
-2. 给后续源码复核提供一个按目录跳转的索引。
+1. Provide categorized explanations for component directories and top-level components not covered in lengthy analysis.
+2. Provide a directory-jumping index for subsequent source code review.
 
-## 2. 顶层独立组件的分组理解
+## 2. Grouped Understanding of Top-Level Standalone Components
 
-`src/components/` 根目录下还有大量不属于子目录家族的独立组件，可以按职责分成几组。
+Under the `src/components/` root directory, there are also many standalone components that do not belong to sub-directory families. They can be grouped by responsibility.
 
-### 2.1 工作台壳层与状态条
+### 2.1 Workspace Shell & Status Bar
 
-代表文件：
+Representative files:
 
 - [`FullscreenLayout.tsx`](../../src/components/FullscreenLayout.tsx)
 - [`StatusLine.tsx`](../../src/components/StatusLine.tsx)
@@ -26,11 +26,11 @@
 - [`CoordinatorAgentStatus.tsx`](../../src/components/CoordinatorAgentStatus.tsx)
 - [`TeammateViewHeader.tsx`](../../src/components/TeammateViewHeader.tsx)
 
-这一组负责把消息区之外的“外框层”拼起来。
+This group is responsible for assembling the "outer frame layer" outside the message area.
 
-### 2.2 输入基础件
+### 2.2 Input Primitives
 
-代表文件：
+Representative files:
 
 - [`BaseTextInput.tsx`](../../src/components/BaseTextInput.tsx)
 - [`TextInput.tsx`](../../src/components/TextInput.tsx)
@@ -40,11 +40,11 @@
 - [`LanguagePicker.tsx`](../../src/components/LanguagePicker.tsx)
 - [`OutputStylePicker.tsx`](../../src/components/OutputStylePicker.tsx)
 
-这些组件为 `PromptInput` 提供更底层的可组合输入能力。
+These components provide more low-level composable input capabilities for `PromptInput`.
 
-### 2.3 检索、选择与导航弹层
+### 2.3 Search, Selection & Navigation Overlays
 
-代表文件：
+Representative files:
 
 - [`GlobalSearchDialog.tsx`](../../src/components/GlobalSearchDialog.tsx)
 - [`HistorySearchDialog.tsx`](../../src/components/HistorySearchDialog.tsx)
@@ -53,11 +53,11 @@
 - [`MessageSelector.tsx`](../../src/components/MessageSelector.tsx)
 - [`LogSelector.tsx`](../../src/components/LogSelector.tsx)
 
-这组组件把长会话和多资源环境中的查找行为显式产品化了。
+This group explicitly productizes the search behavior in long sessions and multi-resource environments.
 
-### 2.4 展示与渲染辅助
+### 2.4 Display & Rendering Helpers
 
-代表文件：
+Representative files:
 
 - [`Markdown.tsx`](../../src/components/Markdown.tsx)
 - [`MarkdownTable.tsx`](../../src/components/MarkdownTable.tsx)
@@ -67,11 +67,11 @@
 - [`HighlightedCode.tsx`](../../src/components/HighlightedCode.tsx)
 - [`ToolUseLoader.tsx`](../../src/components/ToolUseLoader.tsx)
 
-它们让终端中显示 markdown、表格、diff、代码、tool loader 成为可复用能力。
+They make displaying markdown, tables, diffs, code, and tool loaders in the terminal a reusable capability.
 
-### 2.5 生命周期、远程与恢复类弹窗
+### 2.5 Lifecycle, Remote & Recovery Dialogs
 
-代表文件：
+Representative files:
 
 - [`BridgeDialog.tsx`](../../src/components/BridgeDialog.tsx)
 - [`RemoteEnvironmentDialog.tsx`](../../src/components/RemoteEnvironmentDialog.tsx)
@@ -81,11 +81,11 @@
 - [`WorktreeExitDialog.tsx`](../../src/components/WorktreeExitDialog.tsx)
 - [`ExitFlow.tsx`](../../src/components/ExitFlow.tsx)
 
-这一组体现的是“会话恢复、远程环境、切换与退出”能力。
+This group embodies "session recovery, remote environment, switching, and exit" capabilities.
 
-### 2.6 更新、告警与入门提示
+### 2.6 Updates, Alerts & Onboarding Prompts
 
-代表文件：
+Representative files:
 
 - [`AutoUpdater.tsx`](../../src/components/AutoUpdater.tsx)
 - [`AutoUpdaterWrapper.tsx`](../../src/components/AutoUpdaterWrapper.tsx)
@@ -97,65 +97,65 @@
 - [`InvalidSettingsDialog.tsx`](../../src/components/InvalidSettingsDialog.tsx)
 - [`TokenWarning.tsx`](../../src/components/TokenWarning.tsx)
 
-它们负责将安装、升级、配置问题与使用风险反馈给用户。
+They are responsible for feeding back installation, upgrade, configuration issues, and usage risks to the user.
 
-## 3. 目录级索引
+## 3. Directory-Level Index
 
-下表给出 `src/components/` 主要目录的用途摘要，便于按目录复核源码。
+The following table summarizes the purpose of the main directories under `src/components/`, for convenient directory-based source code review.
 
-| 目录 | 作用 | 备注 |
+| Directory | Purpose | Notes |
 | --- | --- | --- |
-| [`agents`](../../src/components/agents) | agent 列表、详情、编辑、创建向导 | 平台控制面核心之一 |
-| [`PromptInput`](../../src/components/PromptInput) | 输入编排、建议、通知、footer | 与 `Messages` 并列主中枢 |
-| [`messages`](../../src/components/messages) | 各类消息叶子渲染器 | 消息协议层 |
-| [`permissions`](../../src/components/permissions) | 工具审批与规则 UI | 文件数最多 |
-| [`tasks`](../../src/components/tasks) | 后台任务列表与详情 | 多类任务统一视图 |
-| [`mcp`](../../src/components/mcp) | MCP 服务与工具管理 | transport/auth/tool 三层视图 |
-| [`teams`](../../src/components/teams) | teammate/swarm 控制台 | 面向多 agent 协作 |
-| [`memory`](../../src/components/memory) | memory 文件与通知入口 | 对接 user/project/auto/team/agent memory |
-| [`skills`](../../src/components/skills) | skills 浏览器 | 按 source 聚合 |
-| [`hooks`](../../src/components/hooks) | hooks 配置浏览器 | 只读浏览 |
-| [`sandbox`](../../src/components/sandbox) | sandbox 设置与 doctor | 运行环境子系统 |
-| [`Settings`](../../src/components/Settings) | 状态、配置、用量 | Tabs 式设置页 |
-| [`design-system`](../../src/components/design-system) | Dialog、Tabs、Theme 等基础件 | 自建终端设计系统 |
-| [`CustomSelect`](../../src/components/CustomSelect) | 选择器组件基座 | 多处复用 |
-| [`wizard`](../../src/components/wizard) | 向导容器与导航 | agent 创建等场景复用 |
-| [`ui`](../../src/components/ui) | TreeSelect、OrderedList 等通用件 | 辅助构件 |
-| [`shell`](../../src/components/shell) | shell 输出展开与时间显示 | 服务于消息/任务 |
-| [`Spinner`](../../src/components/Spinner) | spinner 变体 | 细粒度状态反馈 |
+| [`agents`](../../src/components/agents) | Agent list, details, editing, creation wizard | One of the core platform control planes |
+| [`PromptInput`](../../src/components/PromptInput) | Input orchestration, suggestions, notifications, footer | Co-main hub with `Messages` |
+| [`messages`](../../src/components/messages) | Various message leaf renderers | Message protocol layer |
+| [`permissions`](../../src/components/permissions) | Tool approval & rules UI | Highest file count |
+| [`tasks`](../../src/components/tasks) | Background task list & details | Unified view for multiple task types |
+| [`mcp`](../../src/components/mcp) | MCP service & tool management | Three-layer view: transport/auth/tool |
+| [`teams`](../../src/components/teams) | Teammate/swarm console | Multi-agent collaboration oriented |
+| [`memory`](../../src/components/memory) | Memory file & notification entry | Interfaces with user/project/auto/team/agent memory |
+| [`skills`](../../src/components/skills) | Skills browser | Aggregated by source |
+| [`hooks`](../../src/components/hooks) | Hooks configuration browser | Read-only browsing |
+| [`sandbox`](../../src/components/sandbox) | Sandbox settings & doctor | Runtime environment subsystem |
+| [`Settings`](../../src/components/Settings) | Status, config, usage | Tab-style settings page |
+| [`design-system`](../../src/components/design-system) | Dialog, Tabs, Theme, etc. building blocks | Self-built terminal design system |
+| [`CustomSelect`](../../src/components/CustomSelect) | Selector component foundation | Reused in multiple places |
+| [`wizard`](../../src/components/wizard) | Wizard container & navigation | Reused in wizard scenarios like agent creation |
+| [`ui`](../../src/components/ui) | TreeSelect, OrderedList, etc. utilities | Auxiliary components |
+| [`shell`](../../src/components/shell) | Shell output expansion & time display | Serves messages/tasks |
+| [`Spinner`](../../src/components/Spinner) | Spinner variants | Fine-grained status feedback |
 
-## 4. 其他值得注意的长尾目录
+## 4. Other Notable Long-Tail Directories
 
-还有一些文件量不大，但具有明确产品含义的目录：
+There are also some directories with smaller file counts but clear product meaning:
 
-- [`LogoV2`](../../src/components/LogoV2)：品牌头图与状态头
-- [`HelpV2`](../../src/components/HelpV2)：帮助内容展示
-- [`FeedbackSurvey`](../../src/components/FeedbackSurvey)：反馈与调研
-- [`TrustDialog`](../../src/components/TrustDialog)：信任/安全提示
-- [`ManagedSettingsSecurityDialog`](../../src/components/ManagedSettingsSecurityDialog)：托管设置安全确认
-- [`Passes`](../../src/components/Passes)：特定能力或权益展示
-- [`DesktopUpsell`](../../src/components/DesktopUpsell)：桌面端升级提示
-- [`LspRecommendation`](../../src/components/LspRecommendation)：LSP 能力推荐
-- [`diff`](../../src/components/diff)：diff 显示辅助
-- [`grove`](../../src/components/grove)：合规与隐私策略 notice
+- [`LogoV2`](../../src/components/LogoV2)Brand header & status header
+- [`HelpV2`](../../src/components/HelpV2)Help content display
+- [`FeedbackSurvey`](../../src/components/FeedbackSurvey)Feedback & surveys
+- [`TrustDialog`](../../src/components/TrustDialog)Trust/security prompts
+- [`ManagedSettingsSecurityDialog`](../../src/components/ManagedSettingsSecurityDialog)Managed settings security confirmation
+- [`Passes`](../../src/components/Passes)Specific capability or entitlement display
+- [`DesktopUpsell`](../../src/components/DesktopUpsell)Desktop upgrade prompts
+- [`LspRecommendation`](../../src/components/LspRecommendation)LSP capability recommendation
+- [`diff`](../../src/components/diff)Diff display helpers
+- [`grove`](../../src/components/grove)Compliance & privacy policy notices
 
-这些目录虽然不是工作台主干，但它们把产品、策略、推广、帮助等非核心能力也纳入了统一终端 UI 体系。
+Although these directories are not part of the workspace backbone, they incorporate non-core capabilities such as product, policy, promotion, and help into a unified terminal UI system.
 
-## 5. 如何复核“每个组件及其子组件”
+## 5. How to Review "Each Component and Its Sub-Components"
 
-如果需要继续做细粒度源码复核，建议按下面顺序阅读：
+If you need to continue fine-grained source code review, the recommended reading order is:
 
-1. 先看 [`App.tsx`](../../src/components/App.tsx)、[`Messages.tsx`](../../src/components/Messages.tsx)、[`PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx)。
-2. 再看各主中枢对应的子目录：[`messages`](../../src/components/messages)、[`PromptInput`](../../src/components/PromptInput)。
-3. 然后按平台能力顺序查看：[`permissions`](../../src/components/permissions)、[`agents`](../../src/components/agents)、[`mcp`](../../src/components/mcp)、[`tasks`](../../src/components/tasks)、[`teams`](../../src/components/teams)。
-4. 最后看支撑层：[`design-system`](../../src/components/design-system)、[`wizard`](../../src/components/wizard)、[`ui`](../../src/components/ui)、[`src/hooks`](../../src/hooks)、[`src/context`](../../src/context)、[`src/state`](../../src/state)。
+1. Start with [`App.tsx`](../../src/components/App.tsx), [`Messages.tsx`](../../src/components/Messages.tsx), [`PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx).
+2. Then look at the sub-directories corresponding to each main hub: [`messages`](../../src/components/messages), [`PromptInput`](../../src/components/PromptInput).
+3. Then view platform capabilities in order: [`permissions`](../../src/components/permissions), [`agents`](../../src/components/agents), [`mcp`](../../src/components/mcp), [`tasks`](../../src/components/tasks), [`teams`](../../src/components/teams).
+4. Finally, look at the support layer: [`design-system`](../../src/components/design-system), [`wizard`](../../src/components/wizard), [`ui`](../../src/components/ui), [`src/hooks`](../../src/hooks), [`src/context`](../../src/context), [`src/state`](../../src/state).
 
-这个顺序能够先抓住主干，再逐步下钻到子组件与辅助构件。
+This order allows you to first grasp the backbone, then gradually drill down into sub-components and auxiliary components.
 
-## 6. 本章小结
+## 6. Chapter Summary
 
-组件索引层面的结论是：
+The conclusions at the component index level are:
 
-- `src/components/` 不是零散堆组件，而是按“会话主干 + 平台控制面 + 设计系统 + 长尾功能”组织。
-- 大部分复杂度集中在消息、输入、权限、agent、MCP、任务、团队几个主题上。
-- 长尾组件虽然分散，但基本都能挂回到这几个主题，不存在明显失控的孤岛目录。
+- `src/components/` is not a scattered pile of components, but organized by "session backbone + platform control plane + design system + long-tail features."
+- Most complexity is concentrated in the themes of messages, input, permissions, agents, MCP, tasks, and teams.
+- Although long-tail components are scattered, they can basically be traced back to these themes, with no obviously uncontrolled orphan directories.

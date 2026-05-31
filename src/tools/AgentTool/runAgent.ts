@@ -1,3 +1,34 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the AGENT EXECUTOR — the real implementation behind the AgentTool.
+// It initializes MCP connections, constructs ToolUseContext, runs hooks,
+// writes sidechain transcripts, and calls query().
+//
+// PARENT→CHILD CONTEXT PROPAGATION:
+// - Value copy: Parent's messages are cloned, not shared
+// - Restricted permissions: Child gets a subset of parent's tools
+// - File state cache: Cloned from parent (LRU eviction in busy sessions)
+// - Abort controller: Child gets its own, linked to parent's
+//
+// MCP CONNECTION FOR AGENTS:
+// Agents can connect to MCP servers declared in their definition.
+// Connection is established BEFORE query() starts, so tools are available
+// from turn 1. Connection failures are non-fatal — agent runs without
+// the server's tools.
+//
+// SIDECHAIN TRANSCRIPT:
+// Agent conversations are written to a sidechain transcript file, separate
+// from the main session transcript. This enables:
+// - Independent resume of agent conversations
+// - Transcript search across main + sidechains
+// - Agent summarization for the main thread
+//
+// HOOK EXECUTION:
+// - Pre-agent hooks: executeSubagentStartHooks() for setup
+// - Post-agent hooks: Registered via registerFrontmatterHooks()
+// - Session hooks: Cleared for agent (agents don't inherit parent hooks)
+// ============================================================================
+
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
 import { randomUUID } from 'crypto'

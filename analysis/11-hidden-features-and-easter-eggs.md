@@ -1,68 +1,68 @@
-# 第十四章：隐藏命令、Feature Flags 与彩蛋
+# Chapter 14: Hidden Commands, Feature Flags, and Easter Eggs
 
-[返回总目录](../README.md)
+[Back to Table of Contents](../README.md)
 
-[上一章：深度发现与边界案例分析](./06-extra-findings.md)
+[Previous Chapter: Deep Findings and Edge Case Analysis](./06-extra-findings.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-前面几章更多在讲主干架构、memory、组件体系和平台能力。本章专门回答另一个问题：
+The preceding chapters focused more on backbone architecture, memory, component systems, and platform capabilities. This chapter specifically answers another question:
 
-这个项目里，除了已经显式露出的功能之外，还藏着哪些“未公开能力、内部版差异、实验开关、品牌彩蛋”？
+Beyond the explicitly surfaced features, what "unpublished capabilities, internal version differences, experimental toggles, and brand easter eggs" are hidden in this project?
 
-我的结论是：这套代码不是简单地“写了一些以后可能会用到的 TODO”。它明确存在：
+My conclusion is: this codebase is not simply "writing TODOs that might be used later." It clearly contains:
 
-- 一层内部版与外部版的编译分流。
-- 一层大量依赖 `feature(...)` 的编译期开关体系。
-- 一层隐藏但已接入主程序的命令。
-- 一层纯 `stub` 占位命令。
-- 一层产品化得很完整的品牌人格化能力，例如 `buddy`、`Clawd`、`stickers`、`passes`。
+- A layer of compilation-time branching between internal and external builds.
+- A layer of compile-time toggle system heavily using `feature(...)`.
+- A layer of hidden commands already wired into the main program.
+- A layer of pure `stub` placeholder commands.
+- A layer of well-productized brand personification capabilities, e.g., `buddy`, `Clawd`, `stickers`, `passes`.
 
-## 2. 先看整体机制：它是如何把“隐藏能力”藏起来的
+## 2. First Look at the Overall Mechanism: How "Hidden Capabilities" Are Concealed
 
-最核心的机制有三个：
+There are three core mechanisms:
 
-1. `process.env.USER_TYPE === 'ant'` 这种内部构建身份判断。
-2. `feature('...')` 这种 `bun:bundle` 编译期开关。
-3. 命令对象里的 `isHidden` / `isEnabled`。
+1. `process.env.USER_TYPE === 'ant'` — internal build identity check.
+2. `feature('...')` — `bun:bundle` compile-time toggles.
+3. `isHidden` / `isEnabled` in command objects.
 
-证据分别在：
+Evidence is found in:
 
 - [`src/commands.ts`](../src/commands.ts)
 - [`src/types/command.ts`](../src/types/command.ts)
 - [`src/utils/undercover.ts`](../src/utils/undercover.ts)
 
-可以用纯文本图概括：
+This can be summarized in a plain text diagram:
 
 ```text
-源码中的能力
+Source capabilities
     |
-    +-- 编译期分流
+    +-- Compile-time branching
     |      |
     |      +-- USER_TYPE === ant
-    |      |      -> 注入 internal only commands
+    |      |      -> Injects internal only commands
     |      |
     |      +-- feature('...')
-    |             -> 决定是否把命令/模块编进产物
+    |             -> Determines whether to compile command/module into output
     |
-    +-- 运行期分流
+    +-- Runtime branching
            |
            +-- isEnabled()
-           |      -> 依赖账号类型、平台、实验 gate、环境变量
+           |      -> Depends on account type, platform, experiment gate, env vars
            |
            +-- isHidden
-                  -> 即使存在，也不出现在 help / typeahead
+                  -> Even if present, doesn't appear in help / typeahead
 ```
 
-命令系统本身就明说了 `isHidden` 的语义是“是否应从 typeahead/help 中隐藏”，见 [`src/types/command.ts`](../src/types/command.ts)。
+The command system itself explicitly states that `isHidden` means "whether to hide from typeahead/help" — see [`src/types/command.ts`](../src/types/command.ts).
 
-## 3. 隐藏命令分成三层
+## 3. Hidden Commands Divided into Three Layers
 
-### 3.1 内部版专属命令
+### 3.1 Internal-Only Commands
 
-`commands.ts` 里有一个非常直接的名单：`INTERNAL_ONLY_COMMANDS`。注释写得也很直白，叫“Commands that get eliminated from the external build”，见 [`src/commands.ts#L224`](../src/commands.ts#L224)。
+`commands.ts` has a very direct list: `INTERNAL_ONLY_COMMANDS`. The comment is also very straightforward, called "Commands that get eliminated from the external build" — see [`src/commands.ts#L224`](../src/commands.ts#L224).
 
-这份名单里包括：
+This list includes:
 
 - `backfillSessions`
 - `breakCache`
@@ -89,38 +89,38 @@
 - `agentsPlatform`
 - `autofixPr`
 
-其中又有一批依赖 `feature(...)` 或内部身份才会被装入，比如：
+Among these, another batch depends on `feature(...)` or internal identity to be loaded, such as:
 
 - `ultraplan`
 - `subscribePr`
 - `agentsPlatform`
 
-对应代码见 [`src/commands.ts#L48`](../src/commands.ts#L48)、[`src/commands.ts#L62`](../src/commands.ts#L62)、[`src/commands.ts#L225`](../src/commands.ts#L225)。
+See corresponding code at [`src/commands.ts#L48`](../src/commands.ts#L48), [`src/commands.ts#L62`](../src/commands.ts#L62), [`src/commands.ts#L225`](../src/commands.ts#L225).
 
-这说明项目并不是“代码里碰巧残留一些内部脚本”，而是把内部命令作为一等公民维护，只是在外部构建中裁掉。
+This shows that the project does not "happen to have internal scripts left in the code," but maintains internal commands as first-class citizens, merely stripped in external builds.
 
-### 3.2 隐藏但仍然是真命令
+### 3.2 Hidden but Still Real Commands
 
-还有一类不是 `stub`，而是正式命令，只是故意不在帮助里展示。
+There is another category that is not a `stub`, but a proper command deliberately hidden from help.
 
-典型例子：
+Typical examples:
 
-- [`heapdump`](../src/commands/heapdump/index.ts)：描述就是 “Dump the JS heap to ~/Desktop”，但 `isHidden: true`，见 [`src/commands/heapdump/index.ts#L3`](../src/commands/heapdump/index.ts#L3)
-- [`rate-limit-options`](../src/commands/rate-limit-options/index.ts)：注释直接写了 “Hidden from help - only used internally”，见 [`src/commands/rate-limit-options/index.ts#L15`](../src/commands/rate-limit-options/index.ts#L15)
-- [`output-style`](../src/commands/output-style/index.ts)：已废弃，但仍保留隐藏入口，见 [`src/commands/output-style/index.ts#L3`](../src/commands/output-style/index.ts#L3)
-- [`thinkback-play`](../src/commands/thinkback-play/index.ts)：注释写明“Hidden command that just plays the animation”，由 thinkback skill 在生成结束后调用，见 [`src/commands/thinkback-play/index.ts#L4`](../src/commands/thinkback-play/index.ts#L4)
+- [`heapdump`](../src/commands/heapdump/index.ts): Description is "Dump the JS heap to ~/Desktop", but `isHidden: true`, see [`src/commands/heapdump/index.ts#L3`](../src/commands/heapdump/index.ts#L3)
+- [`rate-limit-options`](../src/commands/rate-limit-options/index.ts): Comment directly says "Hidden from help - only used internally", see [`src/commands/rate-limit-options/index.ts#L15`](../src/commands/rate-limit-options/index.ts#L15)
+- [`output-style`](../src/commands/output-style/index.ts): Deprecated but still retains hidden entry, see [`src/commands/output-style/index.ts#L3`](../src/commands/output-style/index.ts#L3)
+- [`thinkback-play`](../src/commands/thinkback-play/index.ts): Comment states "Hidden command that just plays the animation", called by thinkback skill after generation completes, see [`src/commands/thinkback-play/index.ts#L4`](../src/commands/thinkback-play/index.ts#L4)
 
-这类命令更像“内部工作流节点”或“调试/过渡兼容入口”，不是完全未实现功能。
+These commands are more like "internal workflow nodes" or "debug/transition compatibility entries," not completely unimplemented functionality.
 
-### 3.3 纯 stub 占位命令
+### 3.3 Pure Stub Placeholder Commands
 
-另一类就真的是占位。很多命令目录只有一行：
+Another category is truly just placeholders. Many command directories contain only one line:
 
 ```js
 export default { isEnabled: () => false, isHidden: true, name: 'stub' };
 ```
 
-典型文件包括：
+Typical files include:
 
 - [`src/commands/good-claude/index.js`](../src/commands/good-claude/index.js)
 - [`src/commands/share/index.js`](../src/commands/share/index.js)
@@ -137,45 +137,45 @@ export default { isEnabled: () => false, isHidden: true, name: 'stub' };
 - [`src/commands/autofix-pr/index.js`](../src/commands/autofix-pr/index.js)
 - [`src/commands/perf-issue/index.js`](../src/commands/perf-issue/index.js)
 
-这一组的含义通常是：
+The meaning of this group is usually:
 
-- 外部源码快照里不提供真实实现。
-- 但命令名和接线位保留了下来。
-- 真正的实现要么在内部仓库，要么被构建流程替换，要么已经下线但接口位还在。
+- The external source snapshot does not provide the real implementation.
+- But the command name and wiring point are preserved.
+- The real implementation is either in an internal repository, replaced by the build process, or already decommissioned but the interface point remains.
 
-因此像 `good-claude` 这种名字，确实带一点彩蛋气质，但从当前快照看，它更像“内部接口残影”，而不是完整功能。
+Therefore, names like `good-claude` do carry a hint of easter egg flair, but based on the current snapshot, it looks more like an "internal interface phantom" than a complete feature.
 
-## 4. `feature(...)` 说明项目有一整套实验/裁剪矩阵
+## 4. `feature(...)` Shows the Project Has a Full Experiment/Cut Matrix
 
-我在 `src/` 全仓扫描到了 **89 个不同的 `feature(...)` 开关**。这不是零星几处 if 判断，而是一整套编译期开关体系。
+I scanned `src/` and found **89 different `feature(...)` toggles**. This is not a handful of scattered if-checks, but a complete compile-time toggle system.
 
-代表性开关包括：
+Representative toggles include:
 
-- 交互与产品能力：`VOICE_MODE`、`BUDDY`、`BRIDGE_MODE`、`TERMINAL_PANEL`、`QUICK_SEARCH`
-- agent / 协作：`FORK_SUBAGENT`、`COORDINATOR_MODE`、`TEAMMEM`、`AGENT_MEMORY_SNAPSHOT`
-- memory / compact：`EXTRACT_MEMORIES`、`REACTIVE_COMPACT`、`CACHED_MICROCOMPACT`
-- 平台扩展：`WORKFLOW_SCRIPTS`、`MCP_RICH_OUTPUT`、`MCP_SKILLS`、`WEB_BROWSER_TOOL`
-- 内部产品线：`KAIROS`、`KAIROS_BRIEF`、`KAIROS_DREAM`、`KAIROS_GITHUB_WEBHOOKS`
-- 实验与观测：`PERFETTO_TRACING`、`ENHANCED_TELEMETRY_BETA`、`SLOW_OPERATION_LOGGING`
-- 更激进或更内部的能力名：`ULTRAPLAN`、`TORCH`、`LODESTONE`、`CHICAGO_MCP`
+- Interaction & product capabilities: `VOICE_MODE`, `BUDDY`, `BRIDGE_MODE`, `TERMINAL_PANEL`, `QUICK_SEARCH`
+- Agent / collaboration: `FORK_SUBAGENT`, `COORDINATOR_MODE`, `TEAMMEM`, `AGENT_MEMORY_SNAPSHOT`
+- Memory / compact: `EXTRACT_MEMORIES`, `REACTIVE_COMPACT`, `CACHED_MICROCOMPACT`
+- Platform extensions: `WORKFLOW_SCRIPTS`, `MCP_RICH_OUTPUT`, `MCP_SKILLS`, `WEB_BROWSER_TOOL`
+- Internal product lines: `KAIROS`, `KAIROS_BRIEF`, `KAIROS_DREAM`, `KAIROS_GITHUB_WEBHOOKS`
+- Experimental & observability: `PERFETTO_TRACING`, `ENHANCED_TELEMETRY_BETA`, `SLOW_OPERATION_LOGGING`
+- More aggressive or internal capability names: `ULTRAPLAN`, `TORCH`, `LODESTONE`, `CHICAGO_MCP`
 
-这套矩阵在命令层尤其明显。比如：
+This matrix is especially evident at the command layer. For example:
 
-- `VOICE_MODE` 才会引入 `/voice`，见 [`src/commands.ts#L80`](../src/commands.ts#L80)
-- `ULTRAPLAN` 才会引入 `ultraplan`，见 [`src/commands.ts#L104`](../src/commands.ts#L104)
-- `BUDDY` 才会引入 `buddy`，见 [`src/commands.ts#L118`](../src/commands.ts#L118)
-- `BRIDGE_MODE` 才会引入 bridge 能力，见 [`src/commands.ts#L73`](../src/commands.ts#L73)
+- `VOICE_MODE` introduces `/voice`, see [`src/commands.ts#L80`](../src/commands.ts#L80)
+- `ULTRAPLAN` introduces `ultraplan`, see [`src/commands.ts#L104`](../src/commands.ts#L104)
+- `BUDDY` introduces `buddy`, see [`src/commands.ts#L118`](../src/commands.ts#L118)
+- `BRIDGE_MODE` introduces bridge capabilities, see [`src/commands.ts#L73`](../src/commands.ts#L73)
 
-这一层很适合继续做一张“开关矩阵表”，因为它能回答三个问题：
+This layer would be well-suited for creating a "toggle matrix table," as it can answer three questions:
 
-1. 哪些能力在源码里已经存在。
-2. 哪些能力只是内部版或实验版开启。
-3. 哪些能力和公开文档里的功能边界并不完全一致。
+1. Which capabilities already exist in the source code.
+2. Which capabilities are only enabled in internal or experimental builds.
+3. Which capabilities are not fully aligned with the feature boundaries described in public documentation.
 
-## 5. beta headers 也是重要线索
+## 5. Beta Headers Are Also Important Clues
 
-另一个很值钱的线索不是命令，而是 beta header。  
-[`src/constants/betas.ts`](../src/constants/betas.ts) 里直接列出了一批能力名和日期：
+Another valuable clue is not commands but beta headers.
+[`src/constants/betas.ts`](../src/constants/betas.ts) directly lists a set of capability names and dates:
 
 - `context-1m-2025-08-07`
 - `web-search-2025-03-05`
@@ -185,122 +185,122 @@ export default { isEnabled: () => false, isHidden: true, name: 'stub' };
 - `afk-mode-2026-01-31`
 - `cli-internal-2026-02-09`
 
-见 [`src/constants/betas.ts#L3`](../src/constants/betas.ts#L3)。
+See [`src/constants/betas.ts#L3`](../src/constants/betas.ts#L3).
 
-这些字符串至少说明两点：
+These strings indicate at least two things:
 
-- 项目和上游模型能力之间是通过显式 beta 协议头协商的。
-- 一些今天在产品表面不一定高可见的能力，其实已经在代码里占了稳定接口位。
+- The project and upstream model capabilities negotiate through explicit beta header protocols.
+- Some capabilities that may not be highly visible on the product surface today already have stable interface positions in the code.
 
-这里要做一个谨慎推断：
+A cautious inference should be made here:
 
-- “代码里有 beta header” 不等于 “你现在就能在公开版里用到这项能力”。
-- 但它至少说明，这些能力不是纯概念，而是已经进入工程接线阶段。
+- "Code has beta headers" does NOT equal "you can use this capability in the public version today."
+- But it at least indicates that these capabilities are not pure concepts; they have entered the engineering wiring stage.
 
-## 6. 真正像“彩蛋”的，是 buddy / Clawd / stickers 这一层
+## 6. The Real "Easter Eggs" Are in the buddy / Clawd / stickers Layer
 
-### 6.1 buddy 不是一句玩笑，而是一套完整人格化子系统
+### 6.1 Buddy Is Not a Joke — It's a Complete Personification Subsystem
 
-`buddy` 相关代码并不薄。最关键的地方在 [`src/buddy/prompt.ts`](../src/buddy/prompt.ts)：
+The `buddy` related code is not thin. The most critical part is in [`src/buddy/prompt.ts`](../src/buddy/prompt.ts):
 
-- 它明确告诉主模型：输入框旁边坐着一个小生物，会偶尔在气泡里评论。
-- 当用户直接叫这个生物名字时，主模型要“退开”，只用一行以内回复，别替它说话。
+- It explicitly tells the main model: there is a small creature sitting beside the input box that occasionally comments in a bubble.
+- When the user directly addresses this creature by name, the main model should "step back," reply in one line or less, and not speak for it.
 
-见 [`src/buddy/prompt.ts#L7`](../src/buddy/prompt.ts#L7)。
+See [`src/buddy/prompt.ts#L7`](../src/buddy/prompt.ts#L7).
 
-这说明它不是普通欢迎文案，而是已经进入对话协议层的一种“第二角色”设计。
+This shows it is not just welcome copy, but a "secondary character" design that has entered the conversation protocol layer.
 
-### 6.2 companion 的“骨架”和“灵魂”是分开存的
+### 6.2 Companion's "Skeleton" and "Soul" Are Stored Separately
 
-[`src/buddy/companion.ts`](../src/buddy/companion.ts) 说明，这套系统不是“随机生成一个小宠物”那么简单，而是把 companion 拆成两层：
+[`src/buddy/companion.ts`](../src/buddy/companion.ts) shows that this system is not as simple as "randomly generating a little pet." It splits the companion into two layers:
 
-- `bones`：确定性骨架，包含 `rarity`、`species`、`eye`、`hat`、`shiny`、`stats`
-- `soul`：模型生成的灵魂，包含 `name`、`personality`
-- 持久化时只存 `soul + hatchedAt`，读取时再用用户 ID 重新滚出 `bones`
+- `bones`: Deterministic skeleton, containing `rarity`, `species`, `eye`, `hat`, `shiny`, `stats`
+- `soul`: Model-generated soul, containing `name`, `personality`
+- When persisting, only `soul + hatchedAt` is saved; on load, `bones` are re-rolled using the user ID
 
-见 [`src/buddy/companion.ts#L78`](../src/buddy/companion.ts#L78) 与 [`src/buddy/types.ts#L103`](../src/buddy/types.ts#L103)。
+See [`src/buddy/companion.ts#L78`](../src/buddy/companion.ts#L78) and [`src/buddy/types.ts#L103`](../src/buddy/types.ts#L103).
 
-这个设计很值得注意，因为它同时解决了三件事：
+This design is noteworthy because it solves three things simultaneously:
 
-- companion 对同一个用户是稳定的，不会每次重启都变种
-- 改 `SPECIES` 列表或重命名物种时，不会把旧存档搞坏
-- 用户也不能靠手改配置把自己伪造成 `legendary`
+- The companion is stable for the same user, not changing species on every restart
+- Changing the `SPECIES` list or renaming species won't corrupt old save data
+- Users cannot manually modify their config to pretend to be `legendary`
 
-代码里甚至把这件事写得很直白：`Bones never persist`，见 [`src/buddy/companion.ts#L124`](../src/buddy/companion.ts#L124)。
+The code even states this explicitly: `Bones never persist` — see [`src/buddy/companion.ts#L124`](../src/buddy/companion.ts#L124).
 
-更具体一点说，这个“孵化”流程是：
+More specifically, this "hatching" process is:
 
-- `companionUserId()` 优先取 `oauthAccount.accountUuid`，否则取 `userID`，再否则退到 `anon`，见 [`src/buddy/companion.ts#L119`](../src/buddy/companion.ts#L119)
-- 用 `userId + "friend-2026-401"` 做哈希种子，见 [`src/buddy/companion.ts#L78`](../src/buddy/companion.ts#L78)
-- 再喂给一个很小的 seeded PRNG `mulberry32()`，见 [`src/buddy/companion.ts#L14`](../src/buddy/companion.ts#L14)
-- 最后按固定顺序 roll 出 rarity、species、eye、hat、shiny、stats，见 [`src/buddy/companion.ts#L83`](../src/buddy/companion.ts#L83)
+- `companionUserId()` prefers `oauthAccount.accountUuid`, then `userID`, then falls back to `anon` — see [`src/buddy/companion.ts#L119`](../src/buddy/companion.ts#L119)
+- Uses `userId + "friend-2026-401"` as the hashing seed — see [`src/buddy/companion.ts#L78`](../src/buddy/companion.ts#L78)
+- Feeds into a small seeded PRNG `mulberry32()` — see [`src/buddy/companion.ts#L14`](../src/buddy/companion.ts#L14)
+- Then rolls rarity, species, eye, hat, shiny, stats in a fixed order — see [`src/buddy/companion.ts#L83`](../src/buddy/companion.ts#L83)
 
-这意味着：真正“每一个用户独有 buddy”的只有名字和 personality；而从静态源码可以完整还原的，是全部确定性的 body archetype，也就是下面会列出来的 18 种 species、眼睛、帽子和属性滚点规则。
+This means: what is truly "unique per user buddy" is only the name and personality; the complete deterministic body archetype can be fully reconstructed from static source, including the 18 species, eyes, hats, and stat roll rules listed below.
 
-### 6.3 稀有度、眼睛、帽子和属性都做成了完整抽卡规则
+### 6.3 Rarity, Eyes, Hats, and Stats Have a Complete Gacha Roll System
 
-对应类型定义在 [`src/buddy/types.ts`](../src/buddy/types.ts)：
+Corresponding type definitions are in [`src/buddy/types.ts`](../src/buddy/types.ts):
 
-- 稀有度：`common`、`uncommon`、`rare`、`epic`、`legendary`
-- 物种：共 18 种，分别是 `duck`、`goose`、`blob`、`cat`、`dragon`、`octopus`、`owl`、`penguin`、`turtle`、`snail`、`ghost`、`axolotl`、`capybara`、`cactus`、`robot`、`rabbit`、`mushroom`、`chonk`
-- 眼睛：`·`、`✦`、`×`、`◉`、`@`、`°`
-- 帽子：`none`、`crown`、`tophat`、`propeller`、`halo`、`wizard`、`beanie`、`tinyduck`
-- 属性：`DEBUGGING`、`PATIENCE`、`CHAOS`、`WISDOM`、`SNARK`
+- Rarity: `common`, `uncommon`, `rare`, `epic`, `legendary`
+- Species: 18 total: `duck`, `goose`, `blob`, `cat`, `dragon`, `octopus`, `owl`, `penguin`, `turtle`, `snail`, `ghost`, `axolotl`, `capybara`, `cactus`, `robot`, `rabbit`, `mushroom`, `chonk`
+- Eyes: `·`, `✦`, `×`, `◉`, `@`, `°`
+- Hats: `none`, `crown`, `tophat`, `propeller`, `halo`, `wizard`, `beanie`, `tinyduck`
+- Stats: `DEBUGGING`, `PATIENCE`, `CHAOS`, `WISDOM`, `SNARK`
 
-见 [`src/buddy/types.ts#L1`](../src/buddy/types.ts#L1)。
+See [`src/buddy/types.ts#L1`](../src/buddy/types.ts#L1).
 
-其中一些细节已经明显不是“随便玩玩”的水平：
+Some details are clearly beyond "just for fun":
 
-- 稀有度权重是明确写死的：`60 / 25 / 10 / 4 / 1`，见 [`src/buddy/types.ts#L126`](../src/buddy/types.ts#L126)
-- `common` 不戴帽子，非 `common` 才会从帽子池抽一顶，见 [`src/buddy/companion.ts#L87`](../src/buddy/companion.ts#L87)
-- `shiny` 概率固定为 `1%`，见 [`src/buddy/companion.ts#L88`](../src/buddy/companion.ts#L88)
-- 属性不是平均分配，而是“一项峰值、一项短板、其他散点”，并且 rarity 会抬高属性地板，见 [`src/buddy/companion.ts#L51`](../src/buddy/companion.ts#L51)
+- Rarity weights are explicitly hardcoded: `60 / 25 / 10 / 4 / 1` — see [`src/buddy/types.ts#L126`](../src/buddy/types.ts#L126)
+- `common` wears no hat; non-`common` rolls a hat from the pool — see [`src/buddy/companion.ts#L87`](../src/buddy/companion.ts#L87)
+- `shiny` probability is fixed at `1%` — see [`src/buddy/companion.ts#L88`](../src/buddy/companion.ts#L88)
+- Stats are not evenly distributed; they follow a "one peak, one weak point, rest scattered" pattern, and rarity raises the stat floor — see [`src/buddy/companion.ts#L51`](../src/buddy/companion.ts#L51)
 
-也就是说，这套 buddy 实际上已经具备一套很轻量的“收集游戏”语法。
+This means the buddy system already has a very lightweight "collectible game" syntax.
 
-其中还有一个很有意思的注释：物种名里有一个会撞上“模型代号 canary”，所以代码故意用 `String.fromCharCode` 动态构造全部 species 名，避免字面量进入 bundle，见 [`src/buddy/types.ts#L4`](../src/buddy/types.ts#L4)。这已经不是普通 UI 彩蛋，而是“彩蛋与内部安全约束共存”。
+One particularly interesting comment: one species name would collide with the "model codename canary," so the code deliberately uses `String.fromCharCode` to dynamically construct all species names, avoiding string literals in the bundle — see [`src/buddy/types.ts#L4`](../src/buddy/types.ts#L4). This is no longer an ordinary UI easter egg; it's "easter egg coexisting with internal security constraints."
 
-### 6.4 它还有完整的上线节奏、发现机制和交互闭环
+### 6.4 It Also Has Complete Launch Timing, Discovery Mechanisms, and Interaction Loop
 
-`buddy` 不只是藏在代码里，它还有一套相当完整的投放路径：
+`buddy` is not just hidden in code; it has a fairly complete deployment path:
 
-- 2026 年 4 月 1 日到 2026 年 4 月 7 日，本地日期命中 teaser window 且用户还没 hatch companion 时，启动会弹一个彩虹色 `/buddy` 提示，持续 15 秒，见 [`src/buddy/useBuddyNotification.tsx#L8`](../src/buddy/useBuddyNotification.tsx#L8)
-- 从 2026 年 4 月开始，`isBuddyLive()` 就会返回 true，说明命令本身被视作正式上线，见 [`src/buddy/useBuddyNotification.tsx#L14`](../src/buddy/useBuddyNotification.tsx#L14)
-- 输入框会对 `/buddy` 关键字做彩虹高亮，见 [`src/buddy/useBuddyNotification.tsx#L79`](../src/buddy/useBuddyNotification.tsx#L79) 和 [`src/components/PromptInput/PromptInput.tsx#L728`](../src/components/PromptInput/PromptInput.tsx#L728)
-- Footer 里如果选中 `companion`，回车会直接提交 `/buddy`，见 [`src/components/PromptInput/PromptInput.tsx#L1788`](../src/components/PromptInput/PromptInput.tsx#L1788)
+- From April 1, 2026 to April 7, 2026, if the local date falls within the teaser window and the user hasn't hatched a companion yet, a rainbow-colored `/buddy` prompt appears on startup for 15 seconds — see [`src/buddy/useBuddyNotification.tsx#L8`](../src/buddy/useBuddyNotification.tsx#L8)
+- Starting April 2026, `isBuddyLive()` returns true, indicating the command itself is considered officially launched — see [`src/buddy/useBuddyNotification.tsx#L14`](../src/buddy/useBuddyNotification.tsx#L14)
+- The input box highlights `/buddy` keywords in rainbow colors — see [`src/buddy/useBuddyNotification.tsx#L79`](../src/buddy/useBuddyNotification.tsx#L79) and [`src/components/PromptInput/PromptInput.tsx#L728`](../src/components/PromptInput/PromptInput.tsx#L728)
+- In the footer, if `companion` is selected, pressing Enter submits `/buddy` — see [`src/components/PromptInput/PromptInput.tsx#L1788`](../src/components/PromptInput/PromptInput.tsx#L1788)
 
-有一个需要如实说明的点：
+One point that must be honestly stated:
 
-- `commands.ts` 明确注册了 `./commands/buddy/index.js`，见 [`src/commands.ts#L118`](../src/commands.ts#L118)
-- 但当前泄露出的 `src/` 目录里没有这份实现文件
+- `commands.ts` clearly registers `./commands/buddy/index.js` — see [`src/commands.ts#L118`](../src/commands.ts#L118)
+- But the current leaked `src/` directory does not contain this implementation file
 
-所以关于 `/buddy` 命令本身的全部子动作，我们不能百分之百逐条复原；但从旁边的状态位和 UI 行为来看，至少可以确定它涉及 hatch，而且还存在 `/buddy pet` 这种互动动作，因为 `companionPetAt` 的注释已经直接写了“Timestamp of last /buddy pet”，见 [`src/state/AppStateStore.ts#L170`](../src/state/AppStateStore.ts#L170)。
+So regarding all sub-actions of the `/buddy` command itself, we cannot reconstruct them 100%. But from the surrounding state flags and UI behavior, at least we can confirm it involves hatching, and there is also a `/buddy pet` interaction action, because the comment for `companionPetAt` directly says "Timestamp of last /buddy pet" — see [`src/state/AppStateStore.ts#L170`](../src/state/AppStateStore.ts#L170).
 
-### 6.5 运行时交互不是静态装饰，而是一个完整的小状态机
+### 6.5 Runtime Interaction Is Not Static Decoration — It's a Complete Small State Machine
 
-这一层主要散落在 [`src/buddy/CompanionSprite.tsx`](../src/buddy/CompanionSprite.tsx)、[`src/screens/REPL.tsx`](../src/screens/REPL.tsx)、[`src/utils/config.ts`](../src/utils/config.ts)：
+This layer is primarily scattered across [`src/buddy/CompanionSprite.tsx`](../src/buddy/CompanionSprite.tsx), [`src/screens/REPL.tsx`](../src/screens/REPL.tsx), [`src/utils/config.ts`](../src/utils/config.ts):
 
-- companion 有常驻渲染位，会占用输入框右边的宽度，见 [`src/buddy/CompanionSprite.tsx#L167`](../src/buddy/CompanionSprite.tsx#L167)
-- 窄终端下会退化成单行 `face + name/quip` 模式，见 [`src/buddy/CompanionSprite.tsx#L225`](../src/buddy/CompanionSprite.tsx#L225)
-- 宽终端下会渲染完整 ASCII sprite，并跑 500ms tick 的 idle/fidget/blink 动画序列，见 [`src/buddy/CompanionSprite.tsx#L18`](../src/buddy/CompanionSprite.tsx#L18) 与 [`src/buddy/CompanionSprite.tsx#L242`](../src/buddy/CompanionSprite.tsx#L242)
-- 如果被 pet，会有大约 2.5 秒的爱心上浮动画，见 [`src/buddy/CompanionSprite.tsx#L19`](../src/buddy/CompanionSprite.tsx#L19)
-- 如果说话，会出现 speech bubble，大约 10 秒后消失，最后约 3 秒进入 fade，见 [`src/buddy/CompanionSprite.tsx#L17`](../src/buddy/CompanionSprite.tsx#L17)
-- 非全屏模式下气泡贴着 sprite 左侧；全屏模式下气泡浮到右下角 overlay 层，见 [`src/buddy/CompanionSprite.tsx#L277`](../src/buddy/CompanionSprite.tsx#L277)
-- 用户一滚动 transcript，就把气泡关掉，避免挡住内容，见 [`src/screens/REPL.tsx#L1297`](../src/screens/REPL.tsx#L1297)
-- 说话内容来自 `fireCompanionObserver(...)`，它在每轮 query 结束后被调用，见 [`src/screens/REPL.tsx#L2803`](../src/screens/REPL.tsx#L2803)
+- The companion has a permanent rendering slot, occupying width to the right of the input box — see [`src/buddy/CompanionSprite.tsx#L167`](../src/buddy/CompanionSprite.tsx#L167)
+- On narrow terminals, it degrades to a single-line `face + name/quip` mode — see [`src/buddy/CompanionSprite.tsx#L225`](../src/buddy/CompanionSprite.tsx#L225)
+- On wide terminals, it renders the full ASCII sprite with a 500ms tick idle/fidget/blink animation sequence — see [`src/buddy/CompanionSprite.tsx#L18`](../src/buddy/CompanionSprite.tsx#L18) and [`src/buddy/CompanionSprite.tsx#L242`](../src/buddy/CompanionSprite.tsx#L242)
+- If petted, there's about a 2.5-second heart float animation — see [`src/buddy/CompanionSprite.tsx#L19`](../src/buddy/CompanionSprite.tsx#L19)
+- If speaking, a speech bubble appears, disappearing after about 10 seconds, with the last ~3 seconds in fade — see [`src/buddy/CompanionSprite.tsx#L17`](../src/buddy/CompanionSprite.tsx#L17)
+- In non-fullscreen mode, the bubble is positioned to the left of the sprite; in fullscreen mode, the bubble floats to the bottom-right overlay layer — see [`src/buddy/CompanionSprite.tsx#L277`](../src/buddy/CompanionSprite.tsx#L277)
+- When the user scrolls through the transcript, the bubble is dismissed to avoid blocking content — see [`src/screens/REPL.tsx#L1297`](../src/screens/REPL.tsx#L1297)
+- Speech content comes from `fireCompanionObserver(...)`, called after each query round completes — see [`src/screens/REPL.tsx#L2803`](../src/screens/REPL.tsx#L2803)
 
-这里还有第二个要谨慎说明的点：
+Here is a second point that must be cautiously stated:
 
-- `AppStateStore` 注释写的是 `friend observer (src/buddy/observer.ts)`，见 [`src/state/AppStateStore.ts#L168`](../src/state/AppStateStore.ts#L168)
-- 但 `src/buddy/observer.ts` 这份源码在当前目录里同样缺失
+- `AppStateStore`'s comment reads `friend observer (src/buddy/observer.ts)` — see [`src/state/AppStateStore.ts#L168`](../src/state/AppStateStore.ts#L168)
+- But `src/buddy/observer.ts` is also missing from the current directory
 
-因此，我们能确认“它会在每轮对话后给一个 companion reaction”，但 reaction 的具体 prompt 和筛选规则，现在还不能从这份泄露目录里完整复原。
+Therefore, we can confirm "it gives a companion reaction after each conversation round," but the specific prompt and filtering rules for the reaction cannot be fully reconstructed from this leaked directory.
 
-### 6.6 把每一个 buddy 原型都还原出来
+### 6.6 Reconstructing Every Buddy Prototype
 
-如果严格说“每一个 buddy”，静态源码其实只能完整还原“每一种 body archetype”，不能还原每个用户专属的名字与 personality，因为后者属于模型生成的 `soul`。但仅就可确定的部分而言，18 个 species 已经可以逐个还原。
+Strictly speaking, static source can only fully reconstruct "each body archetype," not each user's unique name and personality (the latter is model-generated `soul`). But for the determinable parts, all 18 species can be reconstructed one by one.
 
-下面这份图鉴基于 [`src/buddy/sprites.ts`](../src/buddy/sprites.ts) 的 frame 0，统一用 `◉` 代替眼睛，并省略顶部统一的帽子空位；真实运行时还会叠加不同眼型、帽子和 3 帧动画。
+The following gallery is based on frame 0 of [`src/buddy/sprites.ts`](../src/buddy/sprites.ts), uniformly using `◉` for eyes, omitting the uniform hat slot at the top; real runtime will also overlay different eye types, hats, and 3-frame animation.
 
 ```text
 duck
@@ -364,7 +364,7 @@ snail
   ~~~~~~~
 
 ghost
-   .----.
+   .---.
   / ◉  ◉ \
   |      |
   ~`~``~`~
@@ -412,80 +412,80 @@ chonk
   `------´
 ```
 
-如果再配合 [`renderFace(...)`](../src/buddy/sprites.ts#L303) 看，会发现不同 species 不只是“大图不同”，连窄终端模式下的一行脸谱都分别设计了：
+If you further look at [`renderFace(...)`](../src/buddy/sprites.ts#L303), you'll see that different species not only have "different big sprites," but even the single-line face in narrow terminal mode was individually designed:
 
-- `duck` / `goose` 是 `(${eye}>`
-- `cat` 是 `=${eye}ω${eye}=`
-- `dragon` 是 `<${eye}~${eye}>`
-- `octopus` 是 `~(${eye}${eye})~`
-- `axolotl` 是 `}${eye}.${eye}{`
-- `robot` 是 `[${eye}${eye}]`
+- `duck` / `goose` is `(${eye}>`
+- `cat` is `=${eye}ω${eye}=`
+- `dragon` is `<${eye}~${eye}>`
+- `octopus` is `~(${eye}${eye})~`
+- `axolotl` is `}${eye}.${eye}{`
+- `robot` is `[${eye}${eye}]`
 
-这说明团队并不是只做了一个“随机宠物贴图”，而是把 buddy 当作一整套可收集、可识别、可互动的 companion UI 系统在做。
+This shows the team didn't just make a "random pet sticker"; they treated buddy as a complete collectible, identifiable, interactive companion UI system.
 
-### 6.7 Clawd 是可以点击互动的
+### 6.7 Clawd Is Clickable and Interactive
 
-`LogoV2` 里的 `Clawd` 不是静态 logo。  
-[`src/components/LogoV2/AnimatedClawd.tsx`](../src/components/LogoV2/AnimatedClawd.tsx) 里明确做了：
+The `Clawd` in `LogoV2` is not a static logo.
+[`src/components/LogoV2/AnimatedClawd.tsx`](../src/components/LogoV2/AnimatedClawd.tsx) explicitly implements:
 
-- 点击触发动画
-- 动作包括 crouch-jump wave
-- 或者左右张望 look-around
+- Click to trigger animation
+- Actions include crouch-jump wave
+- Or look left-right look-around
 
-见 [`src/components/LogoV2/AnimatedClawd.tsx#L27`](../src/components/LogoV2/AnimatedClawd.tsx#L27) 和 [`src/components/LogoV2/AnimatedClawd.tsx#L49`](../src/components/LogoV2/AnimatedClawd.tsx#L49)。
+See [`src/components/LogoV2/AnimatedClawd.tsx#L27`](../src/components/LogoV2/AnimatedClawd.tsx#L27) and [`src/components/LogoV2/AnimatedClawd.tsx#L49`](../src/components/LogoV2/AnimatedClawd.tsx#L49).
 
-这类细节对主能力没有任何必要，但对产品气质很重要，所以它很典型地属于“工程化彩蛋”。
+These details are completely unnecessary for the main capabilities, but they matter for product character, so they are very typical of "engineered easter eggs."
 
-### 6.8 `/stickers` 是直接通向周边页面的
+### 6.8 `/stickers` Directly Leads to a Merch Page
 
-`/stickers` 也不是玩笑命令。  
-它会直接打开 `https://www.stickermule.com/claudecode`，见 [`src/commands/stickers/stickers.ts#L4`](../src/commands/stickers/stickers.ts#L4)。
+`/stickers` is not a joke command either.
+It directly opens `https://www.stickermule.com/claudecode` — see [`src/commands/stickers/stickers.ts#L4`](../src/commands/stickers/stickers.ts#L4).
 
-这说明团队把实体周边都当成产品体系的一部分接入了命令界面。
+This shows the team treats physical merchandise as part of the product system, integrated into the command interface.
 
-### 6.9 `passes` / guest passes / referral upsell 也带明显“产品彩蛋感”
+### 6.9 `passes` / Guest Passes / Referral Upsell Also Carry a Distinct "Product Easter Egg Feel"
 
-[`src/components/LogoV2/GuestPassesUpsell.tsx`](../src/components/LogoV2/GuestPassesUpsell.tsx) 里会：
+[`src/components/LogoV2/GuestPassesUpsell.tsx`](../src/components/LogoV2/GuestPassesUpsell.tsx) will:
 
-- 检查 guest passes 资格缓存
-- 控制 upsell 展示次数
-- 展示 “3 guest passes at /passes”
-- 或者展示 “Share Claude Code and earn ... extra usage”
+- Check guest passes eligibility cache
+- Control upsell display count
+- Show "3 guest passes at /passes"
+- Or show "Share Claude Code and earn ... extra usage"
 
-见 [`src/components/LogoV2/GuestPassesUpsell.tsx#L22`](../src/components/LogoV2/GuestPassesUpsell.tsx#L22) 和 [`src/components/LogoV2/GuestPassesUpsell.tsx#L57`](../src/components/LogoV2/GuestPassesUpsell.tsx#L57)。
+See [`src/components/LogoV2/GuestPassesUpsell.tsx#L22`](../src/components/LogoV2/GuestPassesUpsell.tsx#L22) and [`src/components/LogoV2/GuestPassesUpsell.tsx#L57`](../src/components/LogoV2/GuestPassesUpsell.tsx#L57).
 
-这部分不算“隐藏命令”，但非常像产品层面的半隐藏运营入口。
+This part is not a "hidden command," but it's very much like a semi-hidden operational entry at the product level.
 
-## 7. 还有一条很值得单独写：undercover 模式
+## 7. There's Another Topic Worth Special Mention: Undercover Mode
 
-如果说前面几节更像彩蛋或实验功能，那么 `undercover` 则体现了很强的内部产品文化。
+While the previous sections are more like easter eggs or experimental features, `undercover` reveals a strong internal product culture.
 
-[`src/utils/undercover.ts`](../src/utils/undercover.ts) 的逻辑是：
+[`src/utils/undercover.ts`](../src/utils/undercover.ts) logic is:
 
-- 在公开 / 开源仓库里，内部版会默认进入 undercover 模式
-- 自动加安全说明，避免 commit message 或 PR 泄露内部代号、版本号、项目名、Slack 频道、短链
-- 甚至明确禁止写 “Claude Code” 或暴露自己是 AI
+- In public / open-source repositories, the internal build enters undercover mode by default
+- Automatically adds safety instructions to prevent commit messages or PRs from leaking internal codenames, version numbers, project names, Slack channels, short links
+- Even explicitly forbids writing "Claude Code" or revealing being AI
 
-见 [`src/utils/undercover.ts#L1`](../src/utils/undercover.ts#L1)。
+See [`src/utils/undercover.ts#L1`](../src/utils/undercover.ts#L1).
 
-这说明项目在“公开协作场景下如何伪装内部 agent 身份”这件事上，是有明确设计的。  
-它不是彩蛋，但它比彩蛋更能揭示这个项目背后的组织形态和真实使用场景。
+This shows the project has a clear design for "how to disguise the internal agent's identity in public collaboration scenarios."
+It's not an easter egg, but it reveals more about the organizational form and real usage scenarios behind this project than any easter egg could.
 
-## 8. 本章结论
+## 8. Chapter Conclusions
 
-关于“还有什么能分析”的结论可以收敛成四点：
+The conclusions about "what else can be analyzed" can be distilled into four points:
 
-1. 最值得继续深入的不是零散彩蛋，而是“隐藏命令 + feature flags + beta headers”组成的隐藏能力矩阵。
-2. 真正意义上的彩蛋，主要集中在 `buddy`、`Clawd`、`stickers`、`passes` 这一层。
-3. `undercover`、`INTERNAL_ONLY_COMMANDS`、大量 `stub` 命令说明这个项目公开版与内部版之间存在明确而系统的分层。
-4. 这套代码库最有研究价值的“隐藏信息”，不是单个玩笑命令，而是它如何工程化地同时维护：
-   - 对外可发布版本
-   - 对内实验版本
-   - 品牌人格化体验
-   - 安全与组织边界
+1. What's most worth further investigation is not scattered easter eggs, but the "hidden commands + feature flags + beta headers" hidden capability matrix.
+2. True easter eggs are mainly concentrated in the `buddy`, `Clawd`, `stickers`, `passes` layer.
+3. `undercover`, `INTERNAL_ONLY_COMMANDS`, and numerous `stub` commands indicate there is a clear and systematic layering between the public and internal versions of this project.
+4. The most valuable "hidden information" in this codebase is not a single joke command, but how it engineeringly maintains simultaneously:
+   - An externally releasable version
+   - An internal experimental version
+   - Brand personification experience
+   - Security and organizational boundaries
 
-## 9. 如果继续往下挖，最适合的三个后续专题
+## 9. Three Best Follow-up Topics for Deeper Exploration
 
-1. `feature(...)` 全量开关矩阵：把 89 个开关按子系统整理成表。
-2. 隐藏命令与内部命令索引：逐个判断是真实现、半实现还是纯 `stub`。
-3. buddy / Clawd / passes 专题：专门写“人格化设计与产品彩蛋系统”。
+1. `feature(...)` full toggle matrix: organize all 89 toggles by subsystem into a table.
+2. Hidden and internal command index: determine one by one whether each is truly implemented, half-implemented, or a pure `stub`.
+3. Buddy / Clawd / Passes deep dive: dedicated topic on "personification design and product easter egg system."

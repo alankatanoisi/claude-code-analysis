@@ -1,12 +1,12 @@
-# 组件体系详解（六）：平台控制面函数级实现拆解
+# Component System Deep Dive (6): Platform Control Plane Function-Level Implementation Breakdown
 
-[返回总目录](../../README.md)
+[Back to Table of Contents](../../README.md)
 
-[上一章：核心组件函数级实现拆解](./05-function-level-core-walkthrough.md)
+[Previous Chapter: Core Component Function-Level Implementation Breakdown](./05-function-level-core-walkthrough.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-本章继续把粒度维持在函数级，不过对象换成平台控制面：
+This chapter maintains the function-level granularity, but switches the subject to the platform control plane:
 
 - permissions
 - tasks
@@ -18,76 +18,76 @@
 - hooks
 - design-system
 
-重点不是“它们属于哪个目录”，而是“具体哪个函数在负责映射、切换、聚合、下发和同步”。
+The focus is not "which directory they belong to," but "which specific function is responsible for mapping, switching, aggregating, dispatching, and syncing."
 
-## 2. permissions：从工具类型映射到审批 UI
+## 2. permissions: From Tool Type Mapping to Approval UI
 
-位置：
+Location:
 
 - [`src/components/permissions/PermissionRequest.tsx`](../../src/components/permissions/PermissionRequest.tsx)
 
 ### 2.1 `permissionComponentForTool(tool)`
 
-实现职责：
+Implementation responsibilities:
 
-- 把具体 `Tool` 类型映射到具体审批组件
-- 例如：
+- Maps a specific `Tool` type to a specific approval component
+- For example:
   - `FileEditTool -> FileEditPermissionRequest`
   - `BashTool -> BashPermissionRequest`
   - `WebFetchTool -> WebFetchPermissionRequest`
   - `GlobTool/GrepTool/FileReadTool -> FilesystemPermissionRequest`
-- feature-gated 工具若缺实现，则回退到 `FallbackPermissionRequest`
+- Feature-gated tools with missing implementation fall back to `FallbackPermissionRequest`
 
-这说明权限 UI 的分发依据不是字符串，而是工具类对象本身。
+This shows that the permission UI dispatch is based not on strings, but on the tool class object itself.
 
 ### 2.2 `getNotificationMessage(toolUseConfirm)`
 
-实现职责：
+Implementation responsibilities:
 
-- 通过 `tool.userFacingName(input)` 取用户可读的工具名
-- 对 enter/exit plan mode、review artifact 等特殊工具返回专门文案
-- 若拿不到工具名，则退回通用提示
+- Gets the user-facing tool name via `tool.userFacingName(input)`
+- Returns specialized text for special tools like enter/exit plan mode, review artifact
+- Falls back to a generic message if tool name is unavailable
 
-它负责权限弹窗的通知语义，而不是审批本身。
+It is responsible for the notification semantics of the permission dialog, not the approval itself.
 
 ### 2.3 `PermissionRequest(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 构造拒绝链：
+- Constructs the rejection chain:
   - `onDone()`
   - `onReject()`
   - `toolUseConfirm.onReject()`
-- 绑定 `app:interrupt`
-- 调用 `useNotifyAfterTimeout(notificationMessage, 'permission_prompt')`
-- 根据 `toolUseConfirm.tool` 选出实际审批组件
-- 把 `toolUseConfirm / toolUseContext / verbose / workerBadge / setStickyFooter` 下发
+- Binds `app:interrupt`
+- Calls `useNotifyAfterTimeout(notificationMessage, 'permission_prompt')`
+- Selects the actual approval component based on `toolUseConfirm.tool`
+- Passes down `toolUseConfirm / toolUseContext / verbose / workerBadge / setStickyFooter`
 
-它本质上是“统一审批入口 + 工具审批组件路由器”。
+It is essentially "the unified approval entry point + tool approval component router."
 
-## 3. tasks：后台任务工作台的函数级实现
+## 3. tasks: Background Task Workspace Function-Level Implementation
 
-位置：
+Location:
 
 - [`src/components/tasks/BackgroundTasksDialog.tsx`](../../src/components/tasks/BackgroundTasksDialog.tsx)
 
 ### 3.1 `getSelectableBackgroundTasks(tasks, foregroundedTaskId)`
 
-实现职责：
+Implementation responsibilities:
 
-- 先过滤出 `isBackgroundTask`
-- 再排除当前 foreground 的 `local_agent`
+- First filters for `isBackgroundTask`
+- Then excludes the current foreground `local_agent`
 
-这样做的目的，是避免一个已经在主界面查看的 agent 同时又在任务对话框里出现一次。
+The purpose of this is to prevent an agent already being viewed in the main interface from appearing again in the task dialog.
 
 ### 3.2 `BackgroundTasksDialog(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 从 `AppState` 取 `tasks`、`foregroundedTaskId`、`expandedView`
-- 根据 `initialDetailTaskId` 或“仅剩一个任务”决定初始 viewState
-- 通过 `useRegisterOverlay('background-tasks-dialog')` 阻止上层 Chat 快捷键泄漏
-- 用 `useMemo` 把所有后台任务转成列表项并排序、分组：
+- Gets `tasks`, `foregroundedTaskId`, `expandedView` from `AppState`
+- Determines initial viewState based on `initialDetailTaskId` or "only one task remaining"
+- Prevents upper-level Chat shortcut leaks via `useRegisterOverlay('background-tasks-dialog')`
+- Uses `useMemo` to convert all background tasks into list items and sort/group them:
   - bash
   - remote agent
   - local agent
@@ -95,48 +95,48 @@
   - workflows
   - MCP monitors
   - dream
-- 用 `useKeybindings` 把 `confirm:previous/next/yes` 绑定到列表导航
+- Binds `confirm:previous/next/yes` to list navigation via `useKeybindings`
 
-它的核心不是展示，而是“把多种后台执行体归一化成统一导航列表”。
+Its core is not display, but "normalizing multiple backend execution bodies into a unified navigation list."
 
 ### 3.3 `toListItem(task)`
 
-实现职责：
+Implementation responsibilities:
 
-- 按 task.type 统一映射为 `ListItem`
-- 为每类任务提取最合适的 label：
-  - shell 用 `command` 或 `description`
-  - remote agent 用 `title`
-  - local agent 用 `description`
-  - teammate 用 `@agentName`
-  - workflow 用 `summary ?? description`
+- Uniformly maps by task.type into `ListItem`
+- Extracts the most appropriate label for each task type:
+  - shell uses `command` or `description`
+  - remote agent uses `title`
+  - local agent uses `description`
+  - teammate uses `@agentName`
+  - workflow uses `summary ?? description`
 
-这一步把后端任务状态模型转换成前端可展示模型。
+This step converts the backend task state model into a frontend displayable model.
 
 ### 3.4 `Item(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 根据终端宽度计算 `maxActivityWidth`
-- 根据 `isCoordinatorMode()` 决定选中指针是否用灰色
-- 若 `item.type === 'leader'`，直接显示 `@TEAM_LEAD_NAME`
-- 否则交给 `BackgroundTaskComponent`
+- Calculates `maxActivityWidth` based on terminal width
+- Uses `isCoordinatorMode()` to decide whether the selection pointer uses gray
+- If `item.type === 'leader'`, directly shows `@TEAM_LEAD_NAME`
+- Otherwise delegates to `BackgroundTaskComponent`
 
-它是任务列表项的统一渲染器。
+It is the unified renderer for task list items.
 
 ### 3.5 `TeammateTaskGroups(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 把 `leader` 和 `in_process_teammate` 分开
-- 再按 `teamName` 分组 teammate
-- 生成按 team 分块的列表
+- Separates `leader` and `in_process_teammate`
+- Then groups teammates by `teamName`
+- Generates a team-grouped list
 
-这说明任务对话框里并不是把 teammate 当作普通任务平铺，而是保留了团队语义。
+This shows that the task dialog does not flatten teammates as ordinary tasks, but preserves team semantics.
 
-## 4. agents：agent 创建与浏览的函数级实现
+## 4. agents: Function-Level Implementation of Agent Creation and Browsing
 
-位置：
+Location:
 
 - [`src/components/agents/AgentsMenu.tsx`](../../src/components/agents/AgentsMenu.tsx)
 - [`src/components/agents/AgentDetail.tsx`](../../src/components/agents/AgentDetail.tsx)
@@ -144,11 +144,11 @@
 
 ### 4.1 `AgentsMenu(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 从 `AppState` 中读取 `agentDefinitions`、`mcpTools`、`toolPermissionContext`
-- 调用 `useMergedTools(tools, mcpTools, toolPermissionContext)` 形成完整工具集
-- 按来源切分 `allAgents`：
+- Reads `agentDefinitions`, `mcpTools`, `toolPermissionContext` from `AppState`
+- Calls `useMergedTools(tools, mcpTools, toolPermissionContext)` to form the complete tool set
+- Splits `allAgents` by source:
   - built-in
   - userSettings
   - projectSettings
@@ -156,243 +156,243 @@
   - localSettings
   - flagSettings
   - plugin
-- 用 `resolveAgentOverrides(...)` 得到最终生效的 resolved agents
-- 处理创建、删除、详情、编辑、wizard 等模式切换
+- Uses `resolveAgentOverrides(...)` to get the final effective resolved agents
+- Handles mode switching for creation, deletion, details, editing, wizard, etc.
 
-这个函数是 agent 控制面的总状态机。
+This function is the master state machine of the agent control plane.
 
 ### 4.2 `AgentDetail(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 调用 `resolveAgentTools(agent, tools, false)` 计算合法/非法 tools
-- 用 `getActualRelativeAgentFilePath(agent)` 算出文件来源
-- 用 `getAgentColor(agent.agentType)` 决定颜色展示
-- 通过 `getAgentModelDisplay(agent.model)` 展示模型
-- 通过 `getMemoryScopeDisplay(agent.memory)` 展示 memory scope
-- 对非 built-in agent 再渲染 `agent.getSystemPrompt()`
+- Calls `resolveAgentTools(agent, tools, false)` to compute valid/invalid tools
+- Uses `getActualRelativeAgentFilePath(agent)` to determine the file source
+- Uses `getAgentColor(agent.agentType)` to decide color display
+- Shows the model via `getAgentModelDisplay(agent.model)`
+- Shows memory scope via `getMemoryScopeDisplay(agent.memory)`
+- For non-built-in agents, also renders `agent.getSystemPrompt()`
 
-这个函数的重点是“把 agent 定义对象展开成用户可审阅的配置单元”。
+The focus of this function is "expanding the agent definition object into a user-reviewable configuration unit."
 
 ### 4.3 `CreateAgentWizard(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 动态拼出 wizard steps 数组
-- 把 `TypeStep` 和 `ToolsStep` 包成带 props 的闭包 step
-- 仅在 `isAutoMemoryEnabled()` 时插入 `MemoryStep`
-- 最后一页使用 `ConfirmStepWrapper`
-- 把这些步骤交给 `WizardProvider`
+- Dynamically builds the wizard steps array
+- Wraps `TypeStep` and `ToolsStep` into closure steps with props
+- Only inserts `MemoryStep` when `isAutoMemoryEnabled()`
+- Uses `ConfirmStepWrapper` for the last page
+- Passes these steps to `WizardProvider`
 
-关键设计是：创建 agent 的流程不是写死页面，而是“步骤数组驱动”。
+The key design is: the agent creation flow is not hardcoded pages, but "array-driven steps."
 
-## 5. mcp：MCP 面板的函数级实现
+## 5. mcp: MCP Panel Function-Level Implementation
 
-位置：
+Location:
 
 - [`src/components/mcp/MCPSettings.tsx`](../../src/components/mcp/MCPSettings.tsx)
 
 ### 5.1 `MCPSettings(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 从 `AppState` 读取 `mcp` 与 `agentDefinitions`
-- 调用 `extractAgentMcpServers(agentDefinitions.allAgents)` 取出 agent 绑定的 MCP server
-- 过滤 `mcp.clients`，保留可展示客户端
-- 在 effect 中执行 `prepareServers()`：
-  - 遍历每个 client
-  - 判断 transport 是 `sse/http/stdio/claudeai-proxy`
-  - 对 `sse/http` 使用 `ClaudeAuthProvider(...).tokens()` 探测认证状态
-  - 综合 session ingress token 与“已连通且有 tools”来推断 `isAuthenticated`
-  - 最终写入 `servers`
-- 若 `servers` 和 `agentMcpServers` 都为空，则 `onComplete(...)` 给出空配置提示
-- 再通过 `viewState.type` 在 list / server-menu / server-tools 等视图间切换
+- Reads `mcp` and `agentDefinitions` from `AppState`
+- Calls `extractAgentMcpServers(agentDefinitions.allAgents)` to get agent-bound MCP servers
+- Filters `mcp.clients`, keeping displayable clients
+- In an effect, executes `prepareServers()`:
+  - Iterates each client
+  - Determines transport type (`sse/http/stdio/claudeai-proxy`)
+  - For `sse/http`, uses `ClaudeAuthProvider(...).tokens()` to probe authentication status
+  - Combines session ingress token and "connected and has tools" to infer `isAuthenticated`
+  - Finally writes to `servers`
+- If both `servers` and `agentMcpServers` are empty, calls `onComplete(...)` with an empty config message
+- Then switches between list / server-menu / server-tools views via `viewState.type`
 
-这个函数本质上是 MCP 控制台的状态机构建器与 server metadata 聚合器。
+This function is essentially the MCP console's state machine builder and server metadata aggregator.
 
-## 6. teams：多 agent 协作控制面的函数级实现
+## 6. teams: Multi-Agent Collaboration Control Plane Function-Level Implementation
 
-位置：
+Location:
 
 - [`src/components/teams/TeamsDialog.tsx`](../../src/components/teams/TeamsDialog.tsx)
 
 ### 6.1 `TeamsDialog(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 注册 `useRegisterOverlay('teams-dialog')`
-- 用 `dialogLevel` 区分 `teammateList` 与 `teammateDetail`
-- 用 `getTeammateStatuses(dialogLevel.teamName)` 和轮询 `refreshKey` 刷新状态
-- 用 `handleCycleMode` 实现：
-  - detail 页只循环单个 teammate
-  - list 页批量循环全部 teammate
-- 用 `useInput(...)` 直接处理：
-  - 左右/上下导航
-  - Enter 深钻或跳转 pane
+- Registers `useRegisterOverlay('teams-dialog')`
+- Uses `dialogLevel` to distinguish `teammateList` from `teammateDetail`
+- Uses `getTeammateStatuses(dialogLevel.teamName)` and polling `refreshKey` to refresh state
+- Uses `handleCycleMode` to implement:
+  - Detail page cycles only a single teammate
+  - List page batch cycles all teammates
+- Uses `useInput(...)` to directly handle:
+  - Left/right, up/down navigation
+  - Enter to drill down or jump to pane
   - `k` kill
   - `s` graceful shutdown
   - `h/H` hide/show
   - `p` prune idle teammates
 
-它是 swarm 控制台的主状态机。
+It is the main state machine of the swarm console.
 
 ### 6.2 `sendModeChangeToTeammate(teammateName, teamName, targetMode)`
 
-实现职责：
+Implementation responsibilities:
 
-- 先调用 `setMemberMode(...)` 直接改配置，保证 UI 立即可见
-- 再构造 `createModeSetRequestMessage(...)`
-- 通过 `writeToMailbox(...)` 发给 teammate
+- First calls `setMemberMode(...)` to directly change config, ensuring UI is immediately visible
+- Then constructs `createModeSetRequestMessage(...)`
+- Sends via `writeToMailbox(...)` to the teammate
 
-这是一种“双写”策略：先改本地配置，再发 mailbox 通知远端 agent 更新运行态。
+This is a "dual-write" strategy: first update local config, then send a mailbox notification to the remote agent to update runtime state.
 
 ### 6.3 `cycleTeammateMode(teammate, teamName, isBypassAvailable)`
 
-实现职责：
+Implementation responsibilities:
 
-- 从 teammate 当前 mode 构造最小 `ToolPermissionContext`
-- 调用 `getNextPermissionMode(context)` 算出下一档模式
-- 再调用 `sendModeChangeToTeammate(...)`
+- Constructs a minimal `ToolPermissionContext` from the teammate's current mode
+- Calls `getNextPermissionMode(context)` to calculate the next mode level
+- Then calls `sendModeChangeToTeammate(...)`
 
 ### 6.4 `cycleAllTeammateModes(teammates, teamName, isBypassAvailable)`
 
-实现职责：
+Implementation responsibilities:
 
-- 先收集所有 teammate 当前模式
-- 若模式不一致，则统一重置为 `default`
-- 若一致，则统一切换到下一模式
-- 用 `setMultipleMemberModes(teamName, modeUpdates)` 批量写配置
-- 再逐个 teammate 发 mailbox 消息
+- First collects all teammates' current modes
+- If modes are inconsistent, resets them all to `default`
+- If consistent, switches them all to the next mode uniformly
+- Uses `setMultipleMemberModes(teamName, modeUpdates)` for batched config writes
+- Then sends mailbox messages to each teammate individually
 
-这解决的是多 agent 协作中最典型的一类一致性问题：团队 permission mode 要么一起重置，要么一起进入下一档。
+This solves one of the most typical consistency problems in multi-agent collaboration: team permission mode either resets together or advances to the next level together.
 
-## 7. memory / skills / hooks：知识与配置面板的函数级实现
+## 7. memory / skills / hooks: Knowledge & Configuration Panel Function-Level Implementation
 
 ### 7.1 `MemoryFileSelector(...)`
 
-位置：
+Location:
 
 - [`src/components/memory/MemoryFileSelector.tsx`](../../src/components/memory/MemoryFileSelector.tsx)
 
-实现职责：
+Implementation responsibilities:
 
-- 用 `use(getMemoryFiles())` 读取 memory 文件树
-- 手动补全 user/project 根 `CLAUDE.md`，即使文件还不存在也会放入候选
-- 依据 `parent` 构造 depth，生成嵌套 label
-- 根据 git 仓库状态决定 project memory 描述是 “Checked in at ./CLAUDE.md” 还是 “Saved in ./CLAUDE.md”
-- 若开启 auto-memory，再增加：
+- Reads the memory file tree using `use(getMemoryFiles())`
+- Manually fills in user/project root `CLAUDE.md`, even if the file does not yet exist
+- Constructs depth based on `parent`, generating nested labels
+- Decides whether project memory description is "Checked in at ./CLAUDE.md" or "Saved in ./CLAUDE.md" based on git repo status
+- If auto-memory is enabled, adds:
   - auto-memory folder
   - team-memory folder
-  - 各 agent memory folder
-- 用 `lastSelectedPath` 保留上次选中项
-- 同时维护 `autoMemoryOn`、`autoDreamOn`、`lastDreamAt`
+  - Each agent memory folder
+- Retains last selection via `lastSelectedPath`
+- Also maintains `autoMemoryOn`, `autoDreamOn`, `lastDreamAt`
 
-这个函数实际上把分散在文件系统各处的记忆入口统一成了一个“memory 资源选择器”。
+This function actually unifies the memory entry points scattered across the file system into a single "memory resource selector."
 
 ### 7.2 `getSourceTitle(source)` / `getSourceSubtitle(source, skills)`
 
-位置：
+Location:
 
 - [`src/components/skills/SkillsMenu.tsx`](../../src/components/skills/SkillsMenu.tsx)
 
-实现职责：
+Implementation responsibilities:
 
-- `getSourceTitle` 把 `plugin`、`mcp`、各 setting source 转成用户文案
-- `getSourceSubtitle`：
-  - 对 `mcp` skills 提取 server 名称
-  - 对文件型 skills 展示对应路径
-  - 若存在旧 `commands_DEPRECATED` 形式，则同时展示 commands 路径
+- `getSourceTitle` converts `plugin`, `mcp`, and various setting sources into user-facing text
+- `getSourceSubtitle`:
+  - For `mcp` skills, extracts server name
+  - For file-based skills, shows the corresponding path
+  - If old `commands_DEPRECATED` form exists, also shows commands path
 
 ### 7.3 `SkillsMenu(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 从 `commands` 过滤出技能命令
-- 按 `policy/user/project/local/flag/plugin/mcp` 分组
-- 每组内排序
-- 无技能时展示空态对话框
-- 有技能时逐组渲染，并显示总 skill 数
+- Filters skill commands from `commands`
+- Groups by `policy/user/project/local/flag/plugin/mcp`
+- Sorts within each group
+- Shows empty state dialog when no skills exist
+- Renders group by group when skills exist, showing total skill count
 
-这说明 skills UI 并不是直接列命令，而是把 skill 当作一个按来源聚合的资产目录。
+This shows that the skills UI does not just list commands; it treats skills as an asset catalog aggregated by source.
 
 ### 7.4 `HooksConfigMenu(...)`
 
-位置：
+Location:
 
 - [`src/components/hooks/HooksConfigMenu.tsx`](../../src/components/hooks/HooksConfigMenu.tsx)
 
-实现职责：
+Implementation responsibilities:
 
-- 维护 `modeState`：
+- Maintains `modeState`:
   - `select-event`
   - `select-matcher`
   - `select-hook`
   - `view-hook`
-- 通过 `useSettingsChange(...)` 感知 policySettings 是否：
+- Uses `useSettingsChange(...)` to detect whether policySettings has:
   - `disableAllHooks`
   - `allowManagedHooksOnly`
-- 把 `toolNames + mcp.tools.map(name)` 合并成 `combinedToolNames`
-- 调用 `groupHooksByEventAndMatcher(appStateStore.getState(), combinedToolNames)`
-- 再用 `getSortedMatchersForEvent(...)`、`getHooksForMatcher(...)` 推导当前层级数据
-- 给每一层分别绑定 `confirm:no` 返回逻辑
+- Merges `toolNames + mcp.tools.map(name)` into `combinedToolNames`
+- Calls `groupHooksByEventAndMatcher(appStateStore.getState(), combinedToolNames)`
+- Then uses `getSortedMatchersForEvent(...)`, `getHooksForMatcher(...)` to derive current level data
+- Binds `confirm:no` return logic for each level
 
-这使 hooks 配置浏览器成为一个明显的分层状态机，而不是简单折叠列表。
+This makes the hooks config browser an obvious layered state machine, not a simple collapsible list.
 
-## 8. design-system：通用交互基座的函数级实现
+## 8. design-system: Generic Interaction Foundation Function-Level Implementation
 
 ### 8.1 `Dialog(...)`
 
-位置：
+Location:
 
 - [`src/components/design-system/Dialog.tsx`](../../src/components/design-system/Dialog.tsx)
 
-实现职责：
+Implementation responsibilities:
 
-- 处理默认 color 和 `isCancelActive`
-- 调用 `useExitOnCtrlCDWithKeybindings(...)` 构造 `exitState`
-- 用 `useKeybinding('confirm:no', onCancel, { context: 'Confirmation', isActive: isCancelActive })`
-- 若用户已经按过一次退出键，则显示 “Press {keyName} again to exit”
-- 否则显示标准操作提示：
+- Handles default color and `isCancelActive`
+- Calls `useExitOnCtrlCDWithKeybindings(...)` to construct `exitState`
+- Uses `useKeybinding('confirm:no', onCancel, { context: 'Confirmation', isActive: isCancelActive })`
+- If the user has already pressed an exit key once, shows "Press {keyName} again to exit"
+- Otherwise shows standard action hints:
   - Enter confirm
   - Esc cancel
-- `hideBorder` 为真时只返回内容，否则包一层 `Pane`
+- When `hideBorder` is true, only returns content; otherwise wraps in a `Pane`
 
-这个函数把终端对话框的“取消、退出、边框、输入指南”全部统一了。
+This function unifies "cancel, exit, border, input guide" for all terminal dialogs.
 
 ### 8.2 `ThemeProvider(...)`
 
-位置：
+Location:
 
 - [`src/components/design-system/ThemeProvider.tsx`](../../src/components/design-system/ThemeProvider.tsx)
 
-实现职责：
+Implementation responsibilities:
 
-- 维护：
+- Maintains:
   - `themeSetting`
   - `previewTheme`
   - `systemTheme`
-- 通过 `activeSetting = previewTheme ?? themeSetting` 决定当前生效设置
-- 若 `feature('AUTO_THEME')` 且 `activeSetting === 'auto'`，动态加载 `watchSystemTheme(...)`
-- 通过 `useMemo` 输出一组主题控制函数：
+- Determines the currently active setting by `activeSetting = previewTheme ?? themeSetting`
+- If `feature('AUTO_THEME')` and `activeSetting === 'auto'`, dynamically loads `watchSystemTheme(...)`
+- Outputs a set of theme control functions via `useMemo`:
   - `setThemeSetting(newSetting)`
   - `setPreviewTheme(newSetting)`
   - `savePreview()`
   - `cancelPreview()`
-- `useTheme()` 返回 `[currentTheme, setThemeSetting]`
-- `useThemeSetting()` 返回原始 setting
-- `usePreviewTheme()` 返回 preview 控制器
+- `useTheme()` returns `[currentTheme, setThemeSetting]`
+- `useThemeSetting()` returns the raw setting
+- `usePreviewTheme()` returns the preview controller
 
-这套函数把主题系统明确拆成“持久设置、临时预览、系统解析”三层。
+This set of functions cleanly splits the theme system into three layers: "persistent setting, temporary preview, system resolution."
 
-## 9. 本章小结
+## 9. Chapter Summary
 
-平台控制面下钻到函数级后，可以看到：
+After drilling down to the function level in the platform control plane, it can be seen:
 
-- `PermissionRequest` 通过函数映射把工具审批路由到专用 UI。
-- `BackgroundTasksDialog` 通过 `getSelectableBackgroundTasks`、`toListItem` 和分组逻辑，把多后端任务统一成任务面板。
-- `AgentsMenu`、`CreateAgentWizard`、`AgentDetail` 分别覆盖 agent 管理、创建流程和配置展开。
-- `MCPSettings` 通过 `prepareServers()` 式逻辑聚合 MCP transport 与认证状态。
-- `TeamsDialog` 通过 mailbox 和配置双写函数实现 teammate mode 同步。
-- `MemoryFileSelector`、`SkillsMenu`、`HooksConfigMenu` 则分别把 memory、skills、hooks 变成真正可浏览的控制面资源。
+- `PermissionRequest` routes tool approvals to specialized UI through function mapping.
+- `BackgroundTasksDialog` normalizes multi-backend tasks into a task panel through `getSelectableBackgroundTasks`, `toListItem`, and grouping logic.
+- `AgentsMenu`, `CreateAgentWizard`, and `AgentDetail` cover agent management, creation flow, and config expansion respectively.
+- `MCPSettings` aggregates MCP transport and authentication state through `prepareServers()` logic.
+- `TeamsDialog` implements teammate mode synchronization through mailbox and config dual-write functions.
+- `MemoryFileSelector`, `SkillsMenu`, and `HooksConfigMenu` turn memory, skills, and hooks into truly browsable control plane resources.
 
-也就是说，这些“平台能力组件”真正复杂的地方，不在 UI 壳，而在函数级的映射、聚合、同步和状态机实现。
+In other words, the real complexity of these "platform capability components" is not in the UI shell, but in the function-level mapping, aggregation, synchronization, and state machine implementation.

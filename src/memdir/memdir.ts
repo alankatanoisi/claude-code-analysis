@@ -31,6 +31,36 @@ import {
   WHEN_TO_ACCESS_SECTION,
 } from './memoryTypes.js'
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the MEMORY DIRECTORY system — Claude Code's long-term profile
+// accumulation mechanism. It's NOT a full vector database; it's a lightweight,
+// file-based memory system optimized for the agent's workflow.
+//
+// FIVE-LAYER MEMORY ARCHITECTURE:
+// 1. AUTO MEMORY (this file): User/project long-term memory via MEMORY.md
+//    - MEMORY.md is an INDEX, not body storage. Max 200 lines / 25KB.
+//    - Detail lives in topic files; MEMORY.md references them.
+//    - Synchronous read for React render path compatibility.
+// 2. SESSION MEMORY: Current session summary via background forked subagent
+//    - Thresholds: 10000 tokens to init, 5000 between updates, 3 tool calls between
+//    - Runs as background subagent with tightly sandboxed tool access
+// 3. AGENT MEMORY: Agent-type-specific persistent memory (user/project/local scopes)
+// 4. TEAM MEMORY: Team-synchronized memory with pull/push/watcher/secret scanning
+// 5. RELEVANT RECALL: Lightweight retriever selecting max 5 files per round
+//
+// MEMORY.md DESIGN:
+// - Acts as a table of contents / index for the memory directory
+// - Hard truncation at 200 lines or 25KB (whichever hit first)
+// - Line-truncates first (natural boundary), then byte-truncates at last newline
+// - Warning appended when truncation occurs, telling the model to keep entries short
+// - Built-in guidance text: "This directory already exists — write to it directly"
+//   (shipped because Claude was burning turns on ls/mkdir before writing)
+//
+// MEMORY PATH PRIORITY:
+// CLAUDE_COWORK_MEMORY_PATH_OVERRIDE > settings > ~/.claude/projects/.../memory/
+// ============================================================================
+
 export const ENTRYPOINT_NAME = 'MEMORY.md'
 export const MAX_ENTRYPOINT_LINES = 200
 // ~125 chars/line at 200 lines. At p97 today; catches long-line indexes that

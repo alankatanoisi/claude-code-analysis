@@ -16,6 +16,33 @@ type MessageUpdate = {
   newContext?: ToolUseContext
 }
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// StreamingToolExecutor implements EXECUTE-AS-YOU-RECEIVE tool execution.
+// Instead of waiting for the full model response, tools start executing
+// as soon as their tool_use block is parsed from the stream.
+//
+// STATE MACHINE per tool:
+//   queued → executing → completed → yielded
+//
+// CONCURRENCY RULES:
+// - Concurrent-safe tools can execute in parallel with other concurrent-safe tools
+// - Non-concurrent tools must execute alone (exclusive access)
+// - Results are BUFFERED and emitted in the order tools were received
+//
+// SIBLING ERROR PROPAGATION:
+// When a Bash tool errors, its siblingAbortController fires, killing
+// sibling subprocesses immediately. This prevents cascading failures
+// from implicit dependency chains (e.g., mkdir fails → subsequent
+// commands pointless). Only Bash errors cancel siblings — Read/WebFetch
+// failures are independent.
+//
+// PROGRESS YIELDING:
+// Progress messages are stored separately in pendingProgress and yielded
+// immediately (not buffered). This gives real-time UI updates while
+// maintaining result order.
+// ============================================================================
+
 type ToolStatus = 'queued' | 'executing' | 'completed' | 'yielded'
 
 type TrackedTool = {

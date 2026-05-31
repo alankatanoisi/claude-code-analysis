@@ -143,6 +143,35 @@ import type {
   ServerResource,
 } from './types.js'
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the MCP (Model Context Protocol) client implementation — the
+// extension layer that connects Claude Code to external tools and services.
+//
+// KEY ARCHITECTURAL INSIGHTS:
+// 1. FOUR TRANSPORT PROTOCOLS: stdio, SSE, HTTP, WebSocket — each with
+//    different connection lifecycle, auth, and reconnection semantics.
+// 2. MEMOIZED CONNECTIONS: connectToServer() is memoized to prevent
+//    duplicate connections to the same server. Connection state is tracked
+//    per-server with typed states (pending/connected/needs-auth/error).
+// 3. CONCURRENCY CONTROL: Local servers limited to 3 concurrent connections,
+//    remote servers to 20. This prevents resource exhaustion.
+// 4. AUTH CACHE: OAuth tokens cached with 15-minute TTL to prevent auth
+//    avalanche (many tools hitting auth simultaneously).
+// 5. SESSION EXPIRY: HTTP 404 + JSON-RPC -32001 = session expired.
+//    Connection cache cleared and fresh client obtained on retry.
+// 6. TOOL NAMING: MCP tools use format mcp__<server>__<tool> to avoid
+//    name collisions with built-in tools.
+// 7. DESCRIPTION TRUNCATION: MAX_MCP_DESCRIPTION_LENGTH=2048 prevents
+//    oversized tool descriptions from bloating the prompt.
+//
+// SECURITY CONSIDERATIONS:
+// - MCP sources skip shell execution in skills (prevents injection)
+// - IDE tools have an allowlist (ALLOWED_IDE_TOOLS) limiting what passes through
+// - Unicode sanitization applied to all MCP-provided content
+// - Proxy fetch auto-refreshes OAuth on 401 (createClaudeAiProxyFetch)
+// ============================================================================
+
 /**
  * Custom error class to indicate that an MCP tool call failed due to
  * authentication issues (e.g., expired OAuth token returning 401).

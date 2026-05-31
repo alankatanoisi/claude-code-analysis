@@ -1,187 +1,187 @@
-# 组件体系详解（五）：核心组件函数级实现拆解
+# Component System Deep Dive (5): Core Component Function-Level Implementation Breakdown
 
-[返回总目录](../../README.md)
+[Back to Table of Contents](../../README.md)
 
-[上一章：组件索引、长尾组件与目录映射](./04-component-index.md)
+[Previous Chapter: Component Index, Long-Tail Components & Directory Mapping](./04-component-index.md)
 
-[下一章：平台控制面函数级实现](./06-function-level-platform-walkthrough.md)
+[Next Chapter: Platform Control Plane Function-Level Implementation](./06-function-level-platform-walkthrough.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-本章把分析粒度继续下压到“函数级”。这里不再只说某个文件负责什么，而是明确到：
+This chapter pushes the analysis granularity down to the "function level." Here, we no longer just say what a file is responsible for, but specify:
 
-- 哪个函数负责状态建立
-- 哪个函数负责过滤、折叠、分发
-- 哪个函数负责性能优化
-- 哪个函数负责输入/渲染之间的衔接
+- Which function is responsible for state establishment
+- Which function is responsible for filtering, collapsing, dispatching
+- Which function is responsible for performance optimization
+- Which function is responsible for bridging input and rendering
 
-核心范围包括：
+The core scope includes:
 
-- `AppStateProvider` 与状态切片 hooks
-- `Messages` 里的 transcript 预处理函数
-- `VirtualMessageList` 里的虚拟滚动/搜索函数
-- `MessageRow` 与 `Message` 的分发函数
-- `PromptInput` 里的输入编排辅助函数
+- `AppStateProvider` and state slice hooks
+- Transcript preprocessing functions in `Messages`
+- Virtual scrolling/search functions in `VirtualMessageList`
+- Dispatch functions in `MessageRow` and `Message`
+- Input orchestration helper functions in `PromptInput`
 
-## 2. 根状态层函数
+## 2. Root State Layer Functions
 
 ### 2.1 `AppStateProvider(...)`
 
-位置：
+Location:
 
 - [`src/state/AppState.tsx`](../../src/state/AppState.tsx)
 
-实现职责：
+Implementation responsibilities:
 
-- 先检查 `HasAppStateContext`，禁止嵌套 provider
-- 通过 `createStore(initialState ?? getDefaultAppState(), onChangeAppState)` 懒初始化 store
-- 在 `useEffect` 中检查 `toolPermissionContext.isBypassPermissionsModeAvailable`
-- 若远端设置要求禁用 bypass，则调用内部 `_temp(prev)` 把 `toolPermissionContext` 替换成禁用版
-- 用 `useSettingsChange(onSettingsChange)` 把 settings 变更同步回 store
-- 最终把 `MailboxProvider`、`VoiceProvider`、`AppStoreContext.Provider` 一起挂上去
+- First checks `HasAppStateContext` to prevent nested providers
+- Lazily initializes the store via `createStore(initialState ?? getDefaultAppState(), onChangeAppState)`
+- In `useEffect`, checks `toolPermissionContext.isBypassPermissionsModeAvailable`
+- If remote settings require disabling bypass, calls internal `_temp(prev)` to replace `toolPermissionContext` with a disabled version
+- Uses `useSettingsChange(onSettingsChange)` to sync settings changes back to the store
+- Finally mounts `MailboxProvider`, `VoiceProvider`, and `AppStoreContext.Provider` together
 
-这说明 `AppStateProvider` 不是纯容器，而是“状态源 + 配置变更同步 + 权限模式修正”的复合入口。
+This shows that `AppStateProvider` is not a pure container, but a composite entry point of "state source + config change sync + permission mode correction."
 
 ### 2.2 `useAppState(selector)`
 
-实现职责：
+Implementation responsibilities:
 
-- 通过 `useAppStore()` 取到 store
-- 构造 `get()`，每次从 `store.getState()` 取新状态后执行 selector
-- 再用 `useSyncExternalStore(store.subscribe, get, get)` 订阅切片
+- Gets the store via `useAppStore()`
+- Constructs `get()`, which each time takes new state from `store.getState()` and executes the selector
+- Then uses `useSyncExternalStore(store.subscribe, get, get)` to subscribe to the slice
 
-关键点：
+Key points:
 
-- 它不是返回整棵状态树，而是强制调用者只取切片
-- 配合 `Object.is` 语义，避免无关组件重渲染
+- It does not return the entire state tree, but forces callers to only take slices
+- Combined with `Object.is` semantics, avoids unrelated component re-rendering
 
-这也是为什么上层组件里大量出现 `useAppState(s => s.xxx)` 而不是把一堆状态对象打包传下去。
+This is also why upper-level components heavily use `useAppState(s => s.xxx)` instead of bundling a bunch of state objects and passing them down.
 
 ### 2.3 `useSetAppState()` / `useAppStateStore()`
 
-实现职责：
+Implementation responsibilities:
 
-- `useSetAppState()` 直接返回 `store.setState`
-- `useAppStateStore()` 直接返回 store 本体
+- `useSetAppState()` directly returns `store.setState`
+- `useAppStateStore()` directly returns the store itself
 
-它们的意义是把“订阅”和“写入”拆开。只写不读的组件不会因为状态变化而重渲染。
+Their significance is to separate "subscribing" and "writing." Components that only write but do not read will not re-render due to state changes.
 
 ### 2.4 `useAppStateMaybeOutsideOfProvider(selector)`
 
-实现职责：
+Implementation responsibilities:
 
-- 当外层没有 `AppStateProvider` 时返回 `undefined`
-- 仍然走 `useSyncExternalStore`
+- Returns `undefined` when there is no `AppStateProvider` outside
+- Still uses `useSyncExternalStore`
 
-这让少数可脱离主工作台复用的组件，能在测试或工具场景中安全运行。
+This allows the few components that can be reused independently of the main workspace to run safely in testing or tool scenarios.
 
-## 3. Messages 里的函数级设计
+## 3. Function-Level Design in Messages
 
-位置：
+Location:
 
 - [`src/components/Messages.tsx`](../../src/components/Messages.tsx)
 
 ### 3.1 `filterForBriefTool(messages, briefToolNames)`
 
-实现职责：
+Implementation responsibilities:
 
-- 建立 `nameSet` 和 `briefToolUseIDs`
-- 第一遍通过 assistant `tool_use` 找到 Brief 工具调用，并记录其 `id`
-- 保留：
-  - 非 `api_metrics` 的 system message
-  - API error assistant message
-  - Brief tool_use message
-  - 对应的 user tool_result
-  - 非 meta 的真实 user 输入
-  - `queued_command` 且 `commandMode === 'prompt'` 的 attachment
-- 丢弃其它普通 assistant text
+- Builds `nameSet` and `briefToolUseIDs`
+- First pass finds Brief tool calls in assistant `tool_use` and records their `id`
+- Keeps:
+  - System messages that are not `api_metrics`
+  - API error assistant messages
+  - Brief tool_use messages
+  - Corresponding user tool_result
+  - Non-meta real user input
+  - `queued_command` attachments with `commandMode === 'prompt'`
+- Discards other ordinary assistant text
 
-这个函数的本质是把 Brief 模式重新定义成“只显示 Brief 相关消息及真实用户输入”的专用视图。
+The essence of this function is to redefine Brief mode as a dedicated view that "only shows Brief-related messages and real user input."
 
 ### 3.2 `dropTextInBriefTurns(messages, briefToolNames)`
 
-实现职责：
+Implementation responsibilities:
 
-- 先按“非 meta user message”划分 turn
-- 给每个 assistant text block 标记其所属 turn
-- 若某个 turn 内出现了 Brief `tool_use`，则把同 turn 的 assistant text 删除
+- First divides turns by "non-meta user message"
+- Marks each assistant text block with its turn
+- If a Brief `tool_use` appears in a turn, removes the assistant text in the same turn
 
-与 `filterForBriefTool` 的区别是：
+The difference from `filterForBriefTool` is:
 
-- 前者是严格过滤视图
-- 后者是 transcript 模式下的“去重清洗”
+- The former is a strict filtering view
+- The latter is a "deduplication cleaning" for transcript mode
 
 ### 3.3 `computeSliceStart(collapsed, anchorRef, cap, step)`
 
-实现职责：
+Implementation responsibilities:
 
-- 根据 `anchorRef.current.uuid` 在 `collapsed` 中查找当前锚点
-- 如果 uuid 丢失，则退回到历史 index
-- 当 `collapsed.length - start > cap + step` 时推进窗口
-- 再用当前 `start` 对应的 message 反向刷新 anchor
+- Finds the current anchor in `collapsed` by `anchorRef.current.uuid`
+- If uuid is missing, falls back to historical index
+- Advances the window when `collapsed.length - start > cap + step`
+- Then uses the message at the current `start` to refresh the anchor in reverse
 
-这个函数专门为“非虚拟化路径”的消息截断服务，其核心不是简单 `slice(-N)`，而是用 uuid+idx 组合锚点避免：
+This function is specialized for message truncation in the "non-virtualized path." Its core is not simple `slice(-N)`, but using uuid+idx combined anchoring to avoid:
 
-- 消息分组重排时窗口抖动
-- compaction 后突然回到 0
-- 终端 scrollback 因前部裁切不断重置
+- Window jitter when message groups are reordered
+- Suddenly jumping back to 0 after compaction
+- Terminal scrollback constantly resetting due to front truncation
 
 ### 3.4 `shouldRenderStatically(message, streamingToolUseIDs, inProgressToolUseIDs, siblingToolUseIDs, screen, lookups)`
 
-实现职责：
+Implementation responsibilities:
 
-- transcript 模式下一律返回 `true`
-- 普通 user/assistant/attachment message：
-  - 没有 `toolUseID` 就可静态
-  - 在 `streamingToolUseIDs` 或 `inProgressToolUseIDs` 中则保持动态
-  - 有未解决 `PostToolUse` hook 时保持动态
-  - 否则要求 sibling tool use 全部 resolved
-- system `api_error` 保持动态
-- `grouped_tool_use` 需要组内全部 resolved
-- `collapsed_read_search` 在 prompt 模式永远动态
+- Transcript mode always returns `true`
+- Normal user/assistant/attachment message:
+  - Can be static if it has no `toolUseID`
+  - Stays dynamic if in `streamingToolUseIDs` or `inProgressToolUseIDs`
+  - Stays dynamic if there are unresolved `PostToolUse` hooks
+  - Otherwise requires all sibling tool uses to be resolved
+- System `api_error` stays dynamic
+- `grouped_tool_use` requires all within the group to be resolved
+- `collapsed_read_search` is always dynamic in prompt mode
 
-这个函数是消息稳定渲染策略的核心。它决定哪些行可以冻结，哪些行必须继续随工具状态更新。
+This function is the core of the message stable rendering strategy. It determines which rows can be frozen and which rows must continue to update with tool state.
 
-## 4. VirtualMessageList 里的函数级设计
+## 4. Function-Level Design in VirtualMessageList
 
-位置：
+Location:
 
 - [`src/components/VirtualMessageList.tsx`](../../src/components/VirtualMessageList.tsx)
 
 ### 4.1 `defaultExtractSearchText(msg)`
 
-实现职责：
+Implementation responsibilities:
 
-- 通过 `WeakMap` 缓存 `renderableSearchText(msg)` 的 lower 结果
+- Caches the lowercased result of `renderableSearchText(msg)` via `WeakMap`
 
-这是 transcript 搜索的兜底文本提取器。没有它，输入搜索词时每次都要重新做文本下沉与 lower。
+This is the fallback text extractor for transcript search. Without it, each search term input would require re-doing text lowering from scratch.
 
 ### 4.2 `stickyPromptText(msg)` / `computeStickyPromptText(msg)`
 
-实现职责：
+Implementation responsibilities:
 
-- `stickyPromptText` 用 `WeakMap` 做缓存
-- `computeStickyPromptText` 只识别两类“真实用户输入”：
-  - `user` message 中的 text block
-  - `attachment.type === 'queued_command'` 的 mid-turn 用户输入
-- 会先调用 `stripSystemReminders(raw)`
-- 若文本以 `<` 开头或为空，则认为不是用户真实输入
+- `stickyPromptText` uses `WeakMap` for caching
+- `computeStickyPromptText` only recognizes two types of "real user input":
+  - text block in a `user` message
+  - `attachment.type === 'queued_command'` mid-turn user input
+  - First calls `stripSystemReminders(raw)`
+  - If text starts with `<` or is empty, considers it not real user input
 
-这两个函数直接支撑 sticky prompt header。它们的重点不在格式化，而在“过滤掉系统 reminder、XML 包装内容和伪输入”。
+These two functions directly support the sticky prompt header. Their focus is not formatting, but "filtering out system reminders, XML wrapper content, and pseudo-input."
 
 ### 4.3 `VirtualMessageList(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 维护 `keysRef`，对 append-only 消息流做增量 key 追加
-- 调用 `useVirtualScroll(scrollRef, keys, columns)` 取得：
+- Maintains `keysRef`, incrementally appending keys for append-only message streams
+- Calls `useVirtualScroll(scrollRef, keys, columns)` to obtain:
   - `range`
   - `measureRef`
   - `offsets`
   - `getItemTop`
   - `getItemElement`
   - `scrollToIndex`
-- 通过 `useImperativeHandle(cursorNavRef, ...)` 暴露光标导航接口：
+- Exposes cursor navigation interface via `useImperativeHandle(cursorNavRef, ...)`:
   - `enterCursor`
   - `navigatePrev`
   - `navigateNext`
@@ -189,202 +189,202 @@
   - `navigateNextUser`
   - `navigateTop`
   - `navigateBottom`
-- 通过 `jumpState` 和 `scanRequestRef` 组织跳转、搜索和高亮
+- Organizes jumping, searching, and highlighting via `jumpState` and `scanRequestRef`
 
-这不是单纯的列表组件，而是“虚拟滚动 + 导航控制器 + 搜索高亮控制器”的复合体。
+This is not a simple list component, but a composite of "virtual scroll + navigation controller + search highlight controller."
 
 ### 4.4 `VirtualItem(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 为每条消息包一层稳定事件包装
-- 降低 per-item 闭包分配
-- 把 `measureRef(k)`、hover/click 这些与虚拟列表有关的行为绑定到单项上
+- Wraps each message with a stable event wrapper
+- Reduces per-item closure allocation
+- Binds behaviors like `measureRef(k)`, hover/click related to virtual list to individual items
 
-这个函数存在的主要理由是性能，而不是业务语义。
+The main reason this function exists is performance, not business semantics.
 
 ### 4.5 `StickyTracker(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 用 `useSyncExternalStore(subscribe, snapshot)` 订阅滚动状态
-- 根据 `scrollTop + pendingDelta` 算出当前可见窗口顶部
-- 从 mounted range 里逆向找到 `firstVisible`
-- 再向前查找最近一个可作为 sticky prompt 的真实用户输入
-- 过滤“提示文本其实仍在屏幕顶部可见”的重复情况
+- Subscribes to scroll state via `useSyncExternalStore(subscribe, snapshot)`
+- Calculates the current visible window top based on `scrollTop + pendingDelta`
+- Finds `firstVisible` in reverse from the mounted range
+- Then searches backward for the nearest real user input that can serve as a sticky prompt
+- Filters out duplicates where "the prompt text is still visible at the top of the screen"
 
-它把“顶部应该显示哪条历史 prompt”从滚动行为中实时推导出来，是 transcript 可读性设计的一部分。
+It derives "which historical prompt should be displayed at the top" from the scrolling behavior in real time, and is part of the transcript readability design.
 
-## 5. MessageRow 里的函数级设计
+## 5. Function-Level Design in MessageRow
 
-位置：
+Location:
 
 - [`src/components/MessageRow.tsx`](../../src/components/MessageRow.tsx)
 
 ### 5.1 `hasContentAfterIndex(messages, index, tools, streamingToolUseIDs)`
 
-实现职责：
+Implementation responsibilities:
 
-- 向后扫描消息数组
-- 跳过：
-  - assistant thinking / redacted thinking
-  - 可折叠的 read/search tool_use
-  - streaming 中的非折叠 tool_use
-  - system / attachment
-  - user tool_result
-  - 临时 grouped collapsible tool_use
-- 一旦遇到真正内容则返回 `true`
+- Scans the message array forward
+- Skips:
+  - Assistant thinking / redacted thinking
+  - Collapsible read/search tool_use
+  - Non-collapsible streaming tool_use
+  - System / attachment
+  - User tool_result
+  - Temporary grouped collapsible tool_use
+- Returns `true` once real content is encountered
 
-它的目标是判断 collapsed read/search 组后面是否已经出现真实内容，以便决定该组还要不要保持“进行中”状态。
+Its goal is to determine whether real content has appeared after a collapsed read/search group, in order to decide whether that group should still maintain "in progress" status.
 
 ### 5.2 `MessageRowImpl(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 判断当前消息是否是 grouped / collapsed 类型
-- 计算 `isActiveCollapsedGroup`
-- 抽取 `displayMsg`
-- 取 `progressMessagesForMessage`
-- 调用 `shouldRenderStatically(...)`
-- 根据 `inProgressToolUseIDs` 计算 `shouldAnimate`
+- Determines whether the current message is grouped / collapsed type
+- Computes `isActiveCollapsedGroup`
+- Extracts `displayMsg`
+- Gets `progressMessagesForMessage`
+- Calls `shouldRenderStatic(...)`
+- Computes `shouldAnimate` based on `inProgressToolUseIDs`
 
-因此 `MessageRowImpl` 更像“单条消息渲染前的状态预计算层”。
+Therefore `MessageRowImpl` is more like a "state pre-computation layer before rendering a single message."
 
 ### 5.3 `isMessageStreaming(...)` / `allToolsResolved(...)`
 
-这两个函数是行级状态判断辅助：
+These two functions are row-level state judgment helpers:
 
-- `isMessageStreaming` 判断某条消息是否仍在 streaming 集合中
-- `allToolsResolved` 判断相关 tool use 是否已经全部 resolved
+- `isMessageStreaming` determines if a message is still in the streaming set
+- `allToolsResolved` determines if related tool uses are all resolved
 
-它们服务于 `areMessageRowPropsEqual(...)` 和渲染冻结策略。
+They serve `areMessageRowPropsEqual(...)` and the rendering freeze strategy.
 
 ### 5.4 `areMessageRowPropsEqual(prev, next)`
 
-实现职责：
+Implementation responsibilities:
 
-- 只在真正影响当前行显示时返回 `false`
-- 避免每次全局消息变化都导致整个 transcript 行级重渲染
+- Only returns `false` when it truly affects the display of the current row
+- Avoids re-rendering the entire transcript at the row level on every global message change
 
-这是 `MessageRow` 性能设计的重要一环。
+This is an important part of `MessageRow`'s performance design.
 
-## 6. Message 里的函数级设计
+## 6. Function-Level Design in Message
 
-位置：
+Location:
 
 - [`src/components/Message.tsx`](../../src/components/Message.tsx)
 
 ### 6.1 `MessageImpl(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 根据 `message.type` 分发给不同渲染支路
-- attachment 走 `AttachmentMessage`
-- assistant 走 `AssistantMessageBlock` 逐 block 渲染
-- user 走 `UserMessage(...)`
-- system / grouped / collapsed 走对应专用组件
+- Dispatches to different rendering branches based on `message.type`
+- attachment goes to `AttachmentMessage`
+- assistant goes to `AssistantMessageBlock` for block-by-block rendering
+- user goes to `UserMessage(...)`
+- system / grouped / collapsed go to corresponding specialized components
 
-它是消息类型分发器，不负责复杂业务判断，只负责把“标准消息结构”转给正确叶子组件。
+It is the message type dispatcher, not responsible for complex business judgments, only for routing "standard message structures" to the correct leaf components.
 
 ### 6.2 `UserMessage(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 根据用户消息中的 block/附件类型决定是文本、图片还是工具结果消息
-- 对 bash output、memory input、teammate/channel message 等走不同 UI
+- Determines whether it is text, image, or tool result message based on the block/attachment type in the user message
+- Routes to different UI for bash output, memory input, teammate/channel messages, etc.
 
-这一层把所有“用户侧产物”统一成一套可见语义。
+This layer unifies all "user-side outputs" into a consistent visible semantic.
 
 ### 6.3 `AssistantMessageBlock(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- `CONNECTOR_TEXT` 打开时，可把 connector_text 伪装成普通 text block
-- `tool_use` 走 `AssistantToolUseMessage`
-- `text` 走 `AssistantTextMessage`
-- `redacted_thinking` 和 `thinking` 在非 transcript 且非 verbose 时直接隐藏
-- `thinking` 还会比较 `thinkingBlockId === lastThinkingBlockId`，在 transcript 中隐藏旧 thinking
-- `server_tool_use` / `advisor_tool_result` 则转给 `AdvisorMessage`
-- 未知 block 直接记错误日志
+- When `CONNECTOR_TEXT` is enabled, can disguise connector_text as a normal text block
+- `tool_use` goes to `AssistantToolUseMessage`
+- `text` goes to `AssistantTextMessage`
+- `redacted_thinking` and `thinking` are hidden directly when not in transcript mode and not verbose
+- `thinking` also compares `thinkingBlockId === lastThinkingBlockId`, hiding old thinking in transcript mode
+- `server_tool_use` / `advisor_tool_result` are routed to `AdvisorMessage`
+- Unknown blocks are logged as errors
 
-它是 assistant content block 的正式分发器，也是 thinking 可见性策略的落点。
+It is the formal dispatcher for assistant content blocks, and also the landing point for thinking visibility strategy.
 
 ### 6.4 `hasThinkingContent(m)`
 
-实现职责：
+Implementation responsibilities:
 
-- 仅对 assistant message 检查其 content 中是否含 `thinking` 或 `redacted_thinking`
+- Only checks whether an assistant message's content contains `thinking` or `redacted_thinking`
 
-此函数虽然很短，但直接被 `areMessagePropsEqual(...)` 用来避免“lastThinkingBlockId 变化时全量重渲染所有无 thinking 的消息”。
+Although this function is very short, it is directly used by `areMessagePropsEqual(...)` to avoid "full re-render of all non-thinking messages when lastThinkingBlockId changes."
 
 ### 6.5 `areMessagePropsEqual(prev, next)`
 
-实现职责：
+Implementation responsibilities:
 
-- 比较 `message.uuid`
-- 只有当前消息真有 thinking 内容时，才关心 `lastThinkingBlockId` 变化
-- 仅当该消息是否为 `latestBashOutputUUID` 发生变化时才重渲染
-- 对 transcript mode、containerWidth、verbose 等关键显示项做细粒度比较
+- Compares `message.uuid`
+- Only cares about `lastThinkingBlockId` changes when the current message actually has thinking content
+- Only re-renders when whether the message is the `latestBashOutputUUID` changes
+- Does fine-grained comparison of key display items like transcript mode, containerWidth, verbose, etc.
 
-这个函数体现了该项目对终端长会话的性能敏感度。
+This function reflects the project's performance sensitivity for long terminal sessions.
 
-## 7. PromptInput 里的函数级设计
+## 7. Function-Level Design in PromptInput
 
-位置：
+Location:
 
 - [`src/components/PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx)
 
 ### 7.1 `PromptInput(...)`
 
-实现职责：
+Implementation responsibilities:
 
-- 建立输入相关状态：
+- Establishes input-related state:
   - `isAutoUpdating`
   - `exitMessage`
   - `cursorOffset`
-- 用 `lastInternalInputRef` 区分“外部注入输入”和“内部编辑输入”
-- 暴露 `insertTextRef.current`，提供：
+- Uses `lastInternalInputRef` to distinguish "externally injected input" from "internally edited input"
+- Exposes `insertTextRef.current`, providing:
   - `insert(text)`
   - `setInputWithCursor(value, cursor)`
-- 从 `AppState` 读取大量工作台状态：
+- Reads a large amount of workspace state from `AppState`:
   - tasks
-  - bridge 状态
+  - bridge state
   - team context
   - prompt suggestion / speculation
   - teammate view / expandedView
-- 继续联动 queued commands、history、typeahead、overlay、voice、dialogs 等行为
+- Further coordinates queued commands, history, typeahead, overlay, voice, dialogs, etc.
 
-这个函数的本质是输入行为协调器。它不只是画输入框，而是统一协调“文本、队列、建议、弹层、bridge、team、history”。
+The essence of this function is the input behavior coordinator. It doesn't just draw an input box, but uniformly coordinates "text, queue, suggestions, overlays, bridge, team, history."
 
 ### 7.2 `getInitialPasteId(messages)`
 
-实现职责：
+Implementation responsibilities:
 
-- 遍历历史 user messages
-- 从 `imagePasteIds` 和 text block 中的 `parseReferences(block.text)` 找最大 paste id
-- 返回 `maxId + 1`
+- Iterates through historical user messages
+- Finds the maximum paste id from `imagePasteIds` and `parseReferences(block.text)` in text blocks
+- Returns `maxId + 1`
 
-它解决的是“新粘贴内容的引用编号不能与历史冲突”的问题。
+It solves the problem of "new paste content reference IDs must not conflict with historical ones."
 
 ### 7.3 `buildBorderText(showFastIcon, showFastIconHint, fastModeCooldown)`
 
-实现职责：
+Implementation responsibilities:
 
-- 若不显示 fast icon，返回 `undefined`
-- 否则构造顶部边框提示内容：
-  - 仅 icon
-  - 或 `icon + /fast` 提示
+- Returns `undefined` if fast icon should not be shown
+- Otherwise constructs the top border hint content:
+  - Just icon
+  - Or `icon + /fast` hint
 
-这是纯展示函数，但把 fast mode 的视觉提示规范成统一边框文本结构。
+This is a pure display function, but it standardizes fast mode's visual hints into a uniform border text structure.
 
-## 8. 本章小结
+## 8. Chapter Summary
 
-函数级拆解后，可以更清楚地看到：
+After the function-level breakdown, it can be more clearly seen:
 
-- `AppStateProvider` 与 `useAppState` 负责建立“切片订阅式”全局状态基座。
-- `Messages` 的关键函数负责 brief 过滤、窗口锚定与静态/动态渲染判定。
-- `VirtualMessageList` 的关键函数负责虚拟滚动、搜索、高亮与 sticky prompt。
-- `MessageRow`、`MessageImpl`、`AssistantMessageBlock` 构成消息语义到显示语义的三级函数链。
-- `PromptInput` 则是输入协调器，其辅助函数负责光标插入、粘贴编号和边框提示。
+- `AppStateProvider` and `useAppState` are responsible for establishing the "slice-subscription" global state foundation.
+- `Messages`' key functions are responsible for brief filtering, window anchoring, and static/dynamic rendering determination.
+- `VirtualMessageList`'s key functions are responsible for virtual scrolling, search, highlighting, and sticky prompts.
+- `MessageRow`, `MessageImpl`, and `AssistantMessageBlock` form a three-level function chain from message semantics to display semantics.
+- `PromptInput` is the input coordinator, whose helper functions handle cursor insertion, paste numbering, and border hints.
 
-也就是说，这套核心交互组件真正的复杂度，已经明确沉到了函数级策略上，而不是仅仅体现在目录结构上。
+In other words, the true complexity of these core interaction components has clearly settled at the function-level strategy, not just reflected in the directory structure.

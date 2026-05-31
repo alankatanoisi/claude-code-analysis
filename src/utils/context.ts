@@ -5,6 +5,30 @@ import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { getModelCapability } from './model/modelCapabilities.js'
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This file manages context window sizes and output token budgets.
+//
+// KEY INSIGHT: SLOT-RESERVATION OPTIMIZATION
+// The default max_output_tokens is capped at 8,000 (not 32k/64k) because:
+// - BQ p99 output = 4,911 tokens (actual usage is much smaller than limits)
+// - 32k/64k defaults over-reserve 8-16× slot capacity
+// - With 8k cap, <1% of requests hit the limit
+// - Those that do get ONE clean retry at 64k (max_output_tokens_escalate)
+//
+// This is a performance optimization: smaller output reservations mean
+// more requests can fit in the API's capacity, reducing排队 and latency.
+//
+// CONTEXT WINDOW RESOLUTION ORDER:
+// 1. CLAUDE_CODE_MAX_CONTEXT_TOKENS env var (ant-only override)
+// 2. [1m] suffix in model name → 1,000,000 tokens
+// 3. Model capability table (max_input_tokens)
+// 4. Beta header (context-1m) + model supports 1M
+// 5. GrowthBook experiment (coral_reef_sonnet)
+// 6. Ant-only model config
+// 7. Default: 200,000 tokens
+// ============================================================================
+
 // Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
 

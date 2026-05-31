@@ -1,17 +1,17 @@
-# 第七章：Sandbox 技术实现细节与运行机制
+# Chapter 7: Sandbox Technical Implementation Details and Runtime Mechanism
 
-[返回总目录](../README.md)
+[Back to Table of Contents](../README.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-这一章不再停留在“Claude Code 有个 sandbox 开关”这一层，而是直接回答四个实现问题：
+This chapter no longer stays at the "Claude Code has a sandbox toggle" level, but directly answers four implementation questions:
 
-1. 一个 Bash 命令到底什么时候会进入沙箱
-2. 配置文件里的 `permissions` / `sandbox` 规则是怎么被翻译成底层隔离配置的
-3. sandbox 和应用层 permission system 是什么关系，谁先判断，谁兜底
-4. 代码里有哪些明确的沙箱逃逸防护，而不是抽象意义上的“更安全”
+1. When exactly does a Bash command enter the sandbox
+2. How the `permissions` / `sandbox` rules in the configuration file are translated into underlying isolation configuration
+3. What is the relationship between the sandbox and the application-layer permission system, which judges first, and which provides fallback
+4. What explicit sandbox escape protections exist in the code, rather than abstract notions of "being more secure"
 
-本章主要依据这些实现：
+This chapter is primarily based on these implementations:
 
 - [`src/tools/BashTool/shouldUseSandbox.ts`](../src/tools/BashTool/shouldUseSandbox.ts)
 - [`src/tools/BashTool/bashPermissions.ts`](../src/tools/BashTool/bashPermissions.ts)
@@ -22,66 +22,66 @@
 - [`src/components/permissions/SandboxPermissionRequest.tsx`](../src/components/permissions/SandboxPermissionRequest.tsx)
 - [`src/components/sandbox/SandboxDoctorSection.tsx`](../src/components/sandbox/SandboxDoctorSection.tsx)
 
-先给结论：
+TL;DR:
 
-这个项目里的 sandbox 不是一个“调用前包一层 bwrap”那么简单的功能，而是一个四层结构：
+The sandbox in this project is not a simple "wrap a bwrap around the call" feature, but a four-layer structure:
 
-1. `shouldUseSandbox()` 决定某条命令是否应该进沙箱
-2. `convertToSandboxRuntimeConfig()` 把 Claude Code 自己的 settings 语义翻译成 sandbox runtime 能理解的文件系统和网络限制
-3. `bashPermissions.ts` 把“沙箱自动放行”和“显式 deny / ask 规则”揉在一起，避免沙箱把权限系统绕过去
-4. `Shell.ts` 和 `cleanupAfterCommand()` 负责把命令真正包进隔离环境，并在命令结束后做宿主机级清理
+1. `shouldUseSandbox()` determines whether a given command should enter the sandbox
+2. `convertToSandboxRuntimeConfig()` translates Claude Code's own settings semantics into filesystem and network restrictions that the sandbox runtime can understand
+3. `bashPermissions.ts` combines "sandbox auto-allow" with explicit deny / ask rules, preventing the sandbox from bypassing the permission system
+4. `Shell.ts` and `cleanupAfterCommand()` are responsible for actually wrapping the command in an isolated environment and performing host-level cleanup after the command finishes
 
-所以，sandbox 在这个项目里不是外围附属模块，而是 Bash 执行链路的一部分。
+Therefore, the sandbox in this project is not a peripheral auxiliary module, but a part of the Bash execution chain.
 
-## 2. 总体架构：不是单点功能，而是一条执行链
+## 2. Overall Architecture: Not a Single Feature, but an Execution Chain
 
-先看整体流程：
+First, look at the overall flow:
 
 ```text
-模型生成 BashTool 调用
+Model generates BashTool call
   -> shouldUseSandbox()
-     -> false: 走普通 Bash 权限路径
+     -> false: go through normal Bash permission path
      -> true:
         -> bashPermissions.checkSandboxAutoAllow()
         -> Shell.ts
         -> SandboxManager.wrapWithSandbox()
         -> sandbox-runtime / bwrap / macOS runtime
-        -> 命令执行
+        -> command execution
         -> cleanupAfterCommand()
         -> scrubBareGitRepoFiles()
 
 settings.permissions / settings.sandbox
   -> convertToSandboxRuntimeConfig()
-  -> 影响 wrapWithSandbox() 的 runtime config
-  -> 同时影响 bashPermissions 和 pathValidation
+  -> affects wrapWithSandbox() runtime config
+  -> also affects bashPermissions and pathValidation
 
-网络越权访问
+Network unauthorized access
   -> SandboxPermissionRequest
 
-依赖缺失 / 平台不支持
+Missing dependencies / unsupported platform
   -> SandboxDoctorSection
 ```
 
-这张图说明了一个关键事实：
+This diagram illustrates a key fact:
 
-- sandbox 不是独立于 permissions 的第二套系统
-- 它是“命令执行隔离”和“权限决策系统”共同作用的结果
+- The sandbox is not a second system independent of permissions
+- It is the combined result of "command execution isolation" and "permission decision system"
 
-如果只看 `sandbox-adapter.ts`，会误以为它只是配置转换器；但如果把 [`src/tools/BashTool/bashPermissions.ts`](../src/tools/BashTool/bashPermissions.ts) 和 [`src/utils/Shell.ts`](../src/utils/Shell.ts) 连起来看，就会发现它已经深入到了命令放行、执行、清理三个阶段。
+If you only look at `sandbox-adapter.ts`, you might mistake it for just a config translator; but when you connect [`src/tools/BashTool/bashPermissions.ts`](../src/tools/BashTool/bashPermissions.ts) and [`src/utils/Shell.ts`](../src/utils/Shell.ts), you'll find it penetrates all three stages: command release, execution, and cleanup.
 
-## 3. 第一步：命令什么时候会进入沙箱
+## 3. Step One: When Does a Command Enter the Sandbox
 
-相关实现：
+Related implementations:
 
 - [`src/tools/BashTool/shouldUseSandbox.ts`](../src/tools/BashTool/shouldUseSandbox.ts)
 - [`src/tools/BashTool/BashTool.tsx`](../src/tools/BashTool/BashTool.tsx)
 - [`src/utils/Shell.ts`](../src/utils/Shell.ts)
 
-这里最核心的判断函数就是 `shouldUseSandbox()`。
+The core decision function here is `shouldUseSandbox()`.
 
-### 3.1 原始实现
+### 3.1 Original Implementation
 
-**真实源码**（摘自 [`src/tools/BashTool/shouldUseSandbox.ts`](../src/tools/BashTool/shouldUseSandbox.ts)）：
+**Actual source code** (excerpted from [`src/tools/BashTool/shouldUseSandbox.ts`](../src/tools/BashTool/shouldUseSandbox.ts)):
 
 ```ts
 export function shouldUseSandbox(input: Partial<SandboxInput>): boolean {
@@ -108,31 +108,31 @@ export function shouldUseSandbox(input: Partial<SandboxInput>): boolean {
 }
 ```
 
-这段实现非常重要，因为它把“是否启用 sandbox”从单纯的全局配置，变成了“全局开关 + 单次工具调用参数 + excludedCommands”三者共同决定的结果。
+This implementation is very important because it turns "whether to enable sandbox" from a simple global config into the combined result of three factors: "global toggle + single tool call parameter + excludedCommands".
 
-### 3.2 可以改写成下面的伪代码
+### 3.2 Can Be Rewritten as the Following Pseudocode
 
 ```text
-if sandbox 本身不可用:
-  不进沙箱
+if sandbox itself is unavailable:
+  don't enter sandbox
 
-if 当前调用显式要求禁用沙箱
-  且策略允许执行 unsandboxed command:
-  不进沙箱
+if current call explicitly requests sandbox to be disabled
+  and policy allows executing unsandboxed commands:
+  don't enter sandbox
 
-if 当前没有 command:
-  不进沙箱
+if there is no current command:
+  don't enter sandbox
 
-if command 命中 excludedCommands:
-  不进沙箱
+if command matches excludedCommands:
+  don't enter sandbox
 
-否则:
-  进沙箱
+otherwise:
+  enter sandbox
 ```
 
-### 3.3 `excludedCommands` 是“便利特性”，不是安全边界
+### 3.3 `excludedCommands` is a "Convenience Feature", Not a Security Boundary
 
-这点在源码里写得非常直白：
+This is stated very plainly in the source code:
 
 ```ts
 // NOTE: excludedCommands is a user-facing convenience feature, not a security boundary.
@@ -140,17 +140,17 @@ if command 命中 excludedCommands:
 // system (which prompts users) is the actual security control.
 ```
 
-这意味着：
+This means:
 
-- `excludedCommands` 的设计目标不是安全收口
-- 它只是告诉系统“这类命令不要自动进沙箱”
-- 真正的安全边界仍然是 permission system 和 sandbox runtime 本身
+- `excludedCommands` is not designed as a security control point
+- It simply tells the system "don't automatically sandbox this type of command"
+- The real security boundary is still the permission system and the sandbox runtime itself
 
-这也是一个很工程化的设计：用户可以对 `bazel`、`docker`、某些本地测试命令做兼容性豁免，但不能把它当成可信安全规则语言。
+This is also a very engineering-oriented design: users can grant compatibility exemptions for `bazel`, `docker`, or certain local test commands, but cannot treat it as a trusted security rule language.
 
-### 3.4 决策结果如何进入执行链
+### 3.4 How the Decision Result Enters the Execution Chain
 
-[`src/tools/BashTool/BashTool.tsx`](../src/tools/BashTool/BashTool.tsx) 最终把这个布尔值传给 shell 执行层：
+[`src/tools/BashTool/BashTool.tsx`](../src/tools/BashTool/BashTool.tsx) ultimately passes this boolean to the shell execution layer:
 
 ```ts
 const shellCommand = await exec(command, abortController.signal, 'bash', {
@@ -161,7 +161,7 @@ const shellCommand = await exec(command, abortController.signal, 'bash', {
 })
 ```
 
-到了 [`src/utils/Shell.ts`](../src/utils/Shell.ts) 才真正包一层 runtime：
+At [`src/utils/Shell.ts`](../src/utils/Shell.ts), it actually wraps a runtime layer:
 
 ```ts
 if (shouldUseSandbox) {
@@ -174,24 +174,24 @@ if (shouldUseSandbox) {
 }
 ```
 
-也就是说：
+In other words:
 
-- `BashTool` 只负责判断
-- `Shell.ts` 负责真正把命令变成“沙箱内命令”
+- `BashTool` is only responsible for the decision
+- `Shell.ts` is responsible for actually turning the command into a "command inside the sandbox"
 
-这是很明确的分层。
+This is a clear separation of concerns.
 
-## 4. 第二步：Claude Code 的 settings 是怎么翻译成沙箱配置的
+## 4. Step Two: How Claude Code Settings Are Translated into Sandbox Configuration
 
-相关实现：
+Related implementations:
 
 - [`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)
 
-这部分的核心函数是 `convertToSandboxRuntimeConfig()`。它不是简单转字段，而是在做一层“语义翻译”。
+The core function here is `convertToSandboxRuntimeConfig()`. It is not a simple field mapping; it performs a layer of "semantic translation".
 
-### 4.1 这个函数做的不是 merge，而是语义重解释
+### 4.1 This Function Does Not Do Merge, but Semantic Reinterpretation
 
-先看源码入口：
+First, look at the source entry point:
 
 ```ts
 export function convertToSandboxRuntimeConfig(
@@ -208,21 +208,21 @@ export function convertToSandboxRuntimeConfig(
   const allowRead: string[] = []
 ```
 
-这里已经能看出两件事：
+Two things are already apparent here:
 
-1. `permissions` 和 `sandbox.*` 两套配置都会被纳入 runtime config
-2. 运行时有一批内置初始规则，并不是完全以用户配置为准
+1. Both `permissions` and `sandbox.*` configuration sets are incorporated into the runtime config
+2. The runtime has a set of built-in initial rules, not entirely dependent on user configuration
 
-例如：
+For example:
 
-- `allowWrite` 默认就包含 `.` 和 Claude temp dir
-- settings 文件路径会被强制塞进 `denyWrite`
+- `allowWrite` defaults to include `.` and the Claude temp dir
+- The settings file path is forcibly added to `denyWrite`
 
-### 4.2 路径语义分成两套，不能混着理解
+### 4.2 Path Semantics Are Divided into Two Sets, Cannot Be Confused
 
-这部分是当前文档里最容易被忽略，但实际最重要的实现细节之一。
+This part is one of the most easily overlooked but actually most important implementation details in the current documentation.
 
-源码里专门写了两个不同的解析函数：
+The source code specifically writes two different parsing functions:
 
 ```ts
 export function resolvePathPatternForSandbox(
@@ -236,14 +236,14 @@ export function resolveSandboxFilesystemPath(
 ): string
 ```
 
-它们分别处理两类路径：
+They handle two types of paths respectively:
 
-1. permission rule 里的路径
-2. `sandbox.filesystem.*` 里的路径
+1. Paths in permission rules
+2. Paths in `sandbox.filesystem.*`
 
-两者的语义不一样。
+The semantics of the two are different.
 
-**真实源码注释**（摘自 [`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)）：
+**Actual source code comments** (excerpted from [`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)):
 
 ```ts
  * Claude Code uses special path prefixes in permission rules:
@@ -251,7 +251,7 @@ export function resolveSandboxFilesystemPath(
  * - `/path` → relative to settings file directory
 ```
 
-而对于 `sandbox.filesystem.*`：
+And for `sandbox.filesystem.*`:
 
 ```ts
  * Unlike permission rules (Edit/Read), these settings use standard path semantics:
@@ -260,45 +260,45 @@ export function resolveSandboxFilesystemPath(
  * - `./path` or `path` → relative to settings file directory
 ```
 
-这说明：
+This means:
 
-- `permissions.allow = ["Edit(/foo)"]` 里的 `/foo` 是相对 settings 根目录
-- `sandbox.filesystem.allowWrite = ["/foo"]` 里的 `/foo` 才是真正绝对路径
+- `permissions.allow = ["Edit(/foo)"]` has `/foo` relative to the settings root directory
+- `sandbox.filesystem.allowWrite = ["/foo"]` has `/foo` as a true absolute path
 
-如果不把这点讲清楚，就很容易把整个 sandbox 行为理解错。
+If this point is not clarified, it's easy to misunderstand the entire sandbox behavior.
 
-### 4.3 文件系统规则的真实构造过程
+### 4.3 The Actual Construction Process of Filesystem Rules
 
-可以把 `convertToSandboxRuntimeConfig()` 的文件系统部分改写成下面这段伪代码：
+The filesystem part of `convertToSandboxRuntimeConfig()` can be rewritten as the following pseudocode:
 
 ```text
-初始化:
+Initialize:
   allowWrite = ['.', ClaudeTempDir]
   denyWrite = []
   denyRead = []
   allowRead = []
 
-内置保护:
-  永远拒绝写 settings.json / settings.local.json / managed settings drop-in
-  永远拒绝写 .claude/skills
-  针对 cwd / originalCwd 都做保护
+Built-in protection:
+  Always deny writing settings.json / settings.local.json / managed settings drop-in
+  Always deny writing .claude/skills
+  Protect against both cwd / originalCwd
 
-兼容 Git worktree:
-  如果当前是 worktree，把 main repo path 加入 allowWrite
+Git worktree compatibility:
+  If currently in a worktree, add main repo path to allowWrite
 
-兼容 add-dir:
-  把 additionalDirectories 和 session add-dir 注入 allowWrite
+add-dir compatibility:
+  Inject additionalDirectories and session add-dir into allowWrite
 
-遍历所有 setting source:
-  从 permissions.allow/deny 提取 Edit / Read 规则
-  从 sandbox.filesystem.allowWrite/denyWrite/allowRead/denyRead 提取规则
-  按 source 解析路径语义
+Iterate over all setting sources:
+  Extract Edit / Read rules from permissions.allow/deny
+  Extract rules from sandbox.filesystem.allowWrite/denyWrite/allowRead/denyRead
+  Resolve path semantics by source
 
-生成 runtime config:
+Generate runtime config:
   filesystem = { allowWrite, denyWrite, allowRead, denyRead }
 ```
 
-### 4.4 原始函数片段：从 permission rules 中提取文件系统规则
+### 4.4 Original Function Snippet: Extracting Filesystem Rules from Permission Rules
 
 ```ts
 for (const source of SETTING_SOURCES) {
@@ -327,16 +327,16 @@ for (const source of SETTING_SOURCES) {
 }
 ```
 
-这里的关键点不是“循环提取规则”，而是：
+The key point here is not "iterating and extracting rules", but:
 
-- 它不是只读 merged settings，而是按 `SETTING_SOURCES` 逐源处理
-- 这是因为路径解析依赖 source，不同来源的 `/foo` 需要映射到不同 settings 根目录
+- It does not just read merged settings; it processes each source individually via `SETTING_SOURCES`
+- This is because path resolution depends on the source; `/foo` from different sources needs to map to different settings root directories
 
-也就是说，source 在这里不是 metadata，而是路径语义的一部分。
+In other words, the source here is not metadata, but part of the path semantics.
 
-### 4.5 网络规则不是独立配置，而是从 `WebFetch` 权限规则反推出来的
+### 4.5 Network Rules Are Not Independent Configuration, But Derived from `WebFetch` Permission Rules
 
-源码里对网络域名的提取逻辑也很直接：
+The source code's logic for extracting network domains is also straightforward:
 
 ```ts
 for (const ruleString of permissions.allow || []) {
@@ -350,21 +350,21 @@ for (const ruleString of permissions.allow || []) {
 }
 ```
 
-这说明 Claude Code 并没有把“网络权限”和“WebFetch 权限”完全拆开，而是把：
+This shows that Claude Code does not completely separate "network permissions" from "WebFetch permissions", but rather:
 
-- `WebFetch(domain:example.com)` 这种应用层规则
-- 转换成 sandbox runtime 能识别的网络 allowlist
+- Converts application-layer rules like `WebFetch(domain:example.com)`
+- Into a network allowlist that the sandbox runtime can recognize
 
-这样做的结果是：上层工具权限和底层网络隔离保持一致，而不是各玩各的。
+The result of this approach is that upper-layer tool permissions and underlying network isolation remain consistent, rather than each operating independently.
 
-### 4.6 `allowManagedDomainsOnly` 是一个更强的策略钳制
+### 4.6 `allowManagedDomainsOnly` is a Stronger Policy Constraint
 
-相关实现：
+Related implementations:
 
 - [`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)
 - [`src/components/permissions/SandboxPermissionRequest.tsx`](../src/components/permissions/SandboxPermissionRequest.tsx)
 
-源码里专门提供了：
+The source code specifically provides:
 
 ```ts
 export function shouldAllowManagedSandboxDomainsOnly(): boolean {
@@ -375,13 +375,13 @@ export function shouldAllowManagedSandboxDomainsOnly(): boolean {
 }
 ```
 
-它的含义不是“默认优先使用托管域名”，而是：
+Its meaning is not "prefer managed domains by default", but:
 
-- 一旦 policy 开启这个选项
-- sandbox 的网络放行只能来自 managed / policy source
-- 运行时的 ask callback 也会被包装，直接拒绝临时放行
+- Once the policy enables this option
+- The sandbox's network allowlisting can only come from managed / policy sources
+- The runtime ask callback will also be wrapped to directly deny temporary allowlisting
 
-初始化时的实现非常明确：
+The initialization implementation is very clear:
 
 ```ts
 const wrappedCallback: SandboxAskCallback | undefined = sandboxAskCallback
@@ -394,20 +394,20 @@ const wrappedCallback: SandboxAskCallback | undefined = sandboxAskCallback
   : undefined
 ```
 
-这实际上把“用户交互层的临时允许”也封死了。
+This effectively blocks "temporary allowance at the user interaction layer".
 
-## 5. 第三步：代码里有哪些内建逃逸防护
+## 5. Step Three: What Built-in Escape Protections Exist in the Code
 
-相关实现：
+Related implementations:
 
 - [`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)
 - [`src/utils/Shell.ts`](../src/utils/Shell.ts)
 
-如果只把 sandbox 理解成“限制读写目录”，会低估这段实现的安全强度。这里有多处明显是针对真实攻击路径加的补丁。
+If you only understand the sandbox as "restricting read/write directories", you would underestimate the security strength of this implementation. There are multiple places that are clearly patches targeting real attack paths.
 
-### 5.1 settings 文件和 `.claude/skills` 被强制加入 denyWrite
+### 5.1 Settings Files and `.claude/skills` Are Forcibly Added to denyWrite
 
-源码里这段非常关键：
+This section in the source code is very critical:
 
 ```ts
 const settingsPaths = SETTING_SOURCES.map(source =>
@@ -422,25 +422,25 @@ if (cwd !== originalCwd) {
 }
 ```
 
-这代表系统不是只保护“代码文件”，而是保护 Claude 自己的控制平面：
+This means the system does not just protect "code files", but protects Claude's own control plane:
 
-- settings 文件不能被 sandbox 内命令偷偷改掉
-- `.claude/skills` 也不能被投毒
+- Settings files cannot be secretly modified by commands inside the sandbox
+- `.claude/skills` cannot be poisoned either
 
-为什么 `.claude/skills` 值得单独保护？源码注释写得很清楚：
+Why is `.claude/skills` worth special protection? The source code comment explains clearly:
 
 ```ts
 // Skills have the same privilege level
 // (auto-discovered, auto-loaded, full Claude capabilities)
 ```
 
-也就是说，一旦允许写 skills 目录，本质上就是允许命令去注入未来会被自动加载的高权限能力。
+In other words, once writing to the skills directory is allowed, it essentially allows commands to inject high-privilege capabilities that will be automatically loaded in the future.
 
-### 5.2 针对 Git bare repo 逃逸做了专门清理
+### 5.2 Specialized Cleanup for Git Bare Repo Escape
 
-这是整套 sandbox 里最有代表性的“现实攻击面防护”。
+This is the most representative "real-world attack surface protection" in the entire sandbox system.
 
-源码注释：
+Source code comment:
 
 ```ts
 // SECURITY: Git's is_git_directory() treats cwd as a bare repo if it has
@@ -448,17 +448,17 @@ if (cwd !== originalCwd) {
 // core.fsmonitor) escapes the sandbox when Claude's unsandboxed git runs.
 ```
 
-这段注释几乎已经把攻击链写出来了：
+This comment almost writes out the attack chain:
 
-1. 沙箱内命令在 cwd 植入伪造 bare repo 文件
-2. 后续 Claude 在宿主机无沙箱执行某些 git 命令
-3. Git 把当前目录当成 repo 处理
-4. 恶意 `core.fsmonitor` 等配置被宿主机 git 消费
-5. 从“沙箱内写文件”升级成“宿主机执行恶意逻辑”
+1. A command inside the sandbox plants fake bare repo files in cwd
+2. Later, Claude executes some git commands on the host without sandbox
+3. Git treats the current directory as a repo
+4. Malicious configurations like `core.fsmonitor` are consumed by the host's git
+5. Escalation from "writing files inside the sandbox" to "executing malicious logic on the host"
 
-对应实现分成两步：
+The corresponding implementation is divided into two steps:
 
-第一步，在构建 config 时尽量把已存在的关键路径直接加到 `denyWrite`：
+Step one, during config construction, try to add existing critical paths directly to `denyWrite`:
 
 ```ts
 const bareGitRepoFiles = ['HEAD', 'objects', 'refs', 'hooks', 'config']
@@ -475,7 +475,7 @@ for (const dir of cwd === originalCwd ? [originalCwd] : [originalCwd, cwd]) {
 }
 ```
 
-第二步，对“配置时不存在、执行后才被种出来”的路径，在命令结束后同步清理：
+Step two, for paths that "didn't exist at config time but were planted after execution", synchronously clean them up after command execution:
 
 ```ts
 function scrubBareGitRepoFiles(): void {
@@ -489,7 +489,7 @@ function scrubBareGitRepoFiles(): void {
 }
 ```
 
-而这个清理又被挂到了 `cleanupAfterCommand()`：
+And this cleanup is hooked into `cleanupAfterCommand()`:
 
 ```ts
 cleanupAfterCommand: (): void => {
@@ -498,7 +498,7 @@ cleanupAfterCommand: (): void => {
 }
 ```
 
-再由 [`src/utils/Shell.ts`](../src/utils/Shell.ts) 在命令结束时触发：
+Then triggered by [`src/utils/Shell.ts`](../src/utils/Shell.ts) when the command finishes:
 
 ```ts
 if (shouldUseSandbox) {
@@ -506,26 +506,26 @@ if (shouldUseSandbox) {
 }
 ```
 
-这说明 sandbox 的安全边界不是“进了隔离环境就结束”，而是：
+This shows that the sandbox's security boundary is not "done once inside the isolated environment", but:
 
-- 执行前：构造限制
-- 执行中：runtime 隔离
-- 执行后：宿主机残留清理
+- Before execution: construct restrictions
+- During execution: runtime isolation
+- After execution: host-level residual cleanup
 
-这是完整攻击链视角下的防护，而不是单次调用视角。
+This is protection from a complete attack chain perspective, not a single-invocation perspective.
 
-## 6. 第四步：sandbox 和 permission system 是怎么耦合的
+## 6. Step Four: How the Sandbox and Permission System Are Coupled
 
-相关实现：
+Related implementations:
 
 - [`src/tools/BashTool/bashPermissions.ts`](../src/tools/BashTool/bashPermissions.ts)
 - [`src/utils/permissions/pathValidation.ts`](../src/utils/permissions/pathValidation.ts)
 
-这一层是最容易被误解的：很多人会以为“既然进了沙箱，就不需要 permission prompt 了”。源码不是这么实现的。
+This layer is the most easily misunderstood: many people assume "since it's already in the sandbox, there's no need for a permission prompt." The source code does not implement it that way.
 
-### 6.1 `autoAllowBashIfSandboxed` 不是无脑放行
+### 6.1 `autoAllowBashIfSandboxed` Does Not Blindly Allow
 
-[`src/tools/BashTool/bashPermissions.ts`](../src/tools/BashTool/bashPermissions.ts) 的主逻辑里有这段：
+The main logic of [`src/tools/BashTool/bashPermissions.ts`](../src/tools/BashTool/bashPermissions.ts) has this section:
 
 ```ts
 if (
@@ -543,14 +543,14 @@ if (
 }
 ```
 
-注意这里的含义：
+Note the meaning here:
 
-- 只有在“sandbox 已启用 + autoAllowBashIfSandboxed 已开启 + 当前命令确实会进沙箱”的三重条件下
-- 才会进入自动放行分支
+- Only under the triple condition of "sandbox enabled + autoAllowBashIfSandboxed enabled + current command will actually enter sandbox"
+- Will it enter the auto-allow branch
 
-### 6.2 自动放行之前，仍然尊重显式 deny / ask
+### 6.2 Before Auto-Allow, It Still Respects Explicit Deny / Ask
 
-`checkSandboxAutoAllow()` 的实现写得非常清楚：
+The implementation of `checkSandboxAutoAllow()` is very clear:
 
 ```ts
 // Check for explicit deny/ask rules on the full command
@@ -561,7 +561,7 @@ if (matchingDenyRules[0] !== undefined) {
 }
 ```
 
-而且它还专门处理 compound command：
+And it also specifically handles compound commands:
 
 ```ts
 const subcommands = splitCommand(command)
@@ -576,11 +576,11 @@ if (subcommands.length > 1) {
 }
 ```
 
-这里体现了一个很成熟的安全判断顺序：
+This reflects a mature security decision order:
 
-1. 先检查完整命令是否命中显式 deny
-2. 再检查 compound command 的每个 subcommand 是否命中 deny / ask
-3. 只有当没有显式规则时，才返回：
+1. First check if the full command hits an explicit deny
+2. Then check if each subcommand of a compound command hits deny / ask
+3. Only when there are no explicit rules, return:
 
 ```ts
 return {
@@ -592,11 +592,11 @@ return {
 }
 ```
 
-也就是说，sandbox 的自动放行只是“默认允许”，不是“覆盖已有拒绝规则”。
+In other words, the sandbox's auto-allow is merely "default allow", not "override existing deny rules".
 
-### 6.3 文件路径权限也会读取 sandbox allowlist
+### 6.3 File Path Permissions Also Read the Sandbox Allowlist
 
-[`src/utils/permissions/pathValidation.ts`](../src/utils/permissions/pathValidation.ts) 里有一个关键函数：
+[`src/utils/permissions/pathValidation.ts`](../src/utils/permissions/pathValidation.ts) has a key function:
 
 ```ts
 export function isPathInSandboxWriteAllowlist(resolvedPath: string): boolean {
@@ -608,7 +608,7 @@ export function isPathInSandboxWriteAllowlist(resolvedPath: string): boolean {
 }
 ```
 
-接着，在 `isPathAllowed()` 里有一段专门把 sandbox write allowlist 作为额外自动允许条件：
+Then, in `isPathAllowed()`, there is a section specifically treating the sandbox write allowlist as an additional auto-allow condition:
 
 ```ts
 if (
@@ -626,28 +626,28 @@ if (
 }
 ```
 
-这段实现很有意思，因为它说明：
+This implementation is very interesting because it shows:
 
-- sandbox 配置不仅影响“Bash 是否被隔离”
-- 还反向影响应用层的 path permission 判断
+- Sandbox configuration not only affects "whether Bash is isolated"
+- But also inversely affects the application-layer path permission decisions
 
-这样做的直接收益是：
+The direct benefit of this approach is:
 
-- 用户已经在 sandbox 配置里明确允许 `/tmp/claude/`
-- 那么 `echo foo > /tmp/claude/x.txt` 这类命令就不需要再额外弹 permission prompt
+- The user has already explicitly allowed `/tmp/claude/` in the sandbox configuration
+- So commands like `echo foo > /tmp/claude/x.txt` don't need an additional permission prompt
 
-这是一种“底层隔离状态反馈到上层交互”的设计。
+This is a design where "underlying isolation state feeds back to upper-layer interaction".
 
-## 7. 第五步：初始化、依赖检测和热更新怎么做
+## 7. Step Five: How Initialization, Dependency Detection, and Hot Update Work
 
-相关实现：
+Related implementations:
 
 - [`src/utils/sandbox/sandbox-adapter.ts`](../src/utils/sandbox/sandbox-adapter.ts)
 - [`src/components/sandbox/SandboxDoctorSection.tsx`](../src/components/sandbox/SandboxDoctorSection.tsx)
 
-### 7.1 sandbox 不是简单看 `sandbox.enabled`
+### 7.1 Sandbox Is Not Simply Checking `sandbox.enabled`
 
-源码里的 `isSandboxingEnabled()`：
+The source code's `isSandboxingEnabled()`:
 
 ```ts
 function isSandboxingEnabled(): boolean {
@@ -667,15 +667,15 @@ function isSandboxingEnabled(): boolean {
 }
 ```
 
-这意味着“settings 写了 `sandbox.enabled: true`”和“实际正在沙箱模式运行”不是同一个概念。中间还隔着：
+This means "settings wrote `sandbox.enabled: true`" and "actually running in sandbox mode" are not the same thing. In between, there are also:
 
-- 当前平台是否支持
-- runtime 依赖是否齐全
-- 是否被 `enabledPlatforms` 限制掉
+- Whether the current platform is supported
+- Whether runtime dependencies are complete
+- Whether it is restricted by the `enabledPlatforms` list
 
-### 7.2 `failIfUnavailable` 体现的是严格安全模式
+### 7.2 `failIfUnavailable` Reflects a Strict Security Mode
 
-源码里有：
+The source code has:
 
 ```ts
 function isSandboxRequired(): boolean {
@@ -687,23 +687,23 @@ function isSandboxRequired(): boolean {
 }
 ```
 
-这说明：
+This shows:
 
-- 默认情况下，sandbox 不可用时可以退化
-- 但如果用户显式要求 `failIfUnavailable`，那 sandbox 就从“增强安全”升级成“必须条件”
+- By default, when sandbox is unavailable, it can degrade gracefully
+- But if the user explicitly requires `failIfUnavailable`, then sandbox upgrades from "enhanced security" to "mandatory condition"
 
-### 7.3 明确给出“为什么没有真正启用 sandbox”
+### 7.3 Clearly Indicates "Why Sandbox Is Not Actually Enabled"
 
-这部分也做得很细。
+This part is also done very carefully.
 
-源码里的 `getSandboxUnavailableReason()` 不只是返回 `true/false`，而是给出具体原因，比如：
+The source code's `getSandboxUnavailableReason()` does not just return `true/false`, but gives specific reasons, such as:
 
-- 平台不支持
-- 是 WSL1 而不是 WSL2
-- 缺少依赖
-- 当前平台不在 `enabledPlatforms` 列表里
+- Platform not supported
+- WSL1 instead of WSL2
+- Missing dependencies
+- Current platform not in the `enabledPlatforms` list
 
-对应 UI 侧的 [`src/components/sandbox/SandboxDoctorSection.tsx`](../src/components/sandbox/SandboxDoctorSection.tsx) 会把依赖错误和 warning 展示出来：
+On the UI side, [`src/components/sandbox/SandboxDoctorSection.tsx`](../src/components/sandbox/SandboxDoctorSection.tsx) displays dependency errors and warnings:
 
 ```ts
 const depCheck = SandboxManager.checkDependencies()
@@ -711,17 +711,17 @@ const hasErrors = depCheck.errors.length > 0
 const hasWarnings = depCheck.warnings.length > 0
 ```
 
-这不是“体验优化”这么简单，它是在避免一个很危险的情况：
+This is not just a "UX optimization"; it is avoiding a very dangerous situation:
 
-- 用户以为自己开启了 sandbox
-- 实际上依赖缺失，命令根本没进沙箱
-- 但系统又不告诉他
+- The user thinks they have enabled sandbox
+- But in reality, dependencies are missing and commands never enter the sandbox
+- Yet the system does not tell them
 
-源码注释直接把这叫做 security footgun，这个判断是准确的。
+The source code comment directly calls this a security footgun, which is an accurate assessment.
 
-### 7.4 配置热更新不是重启式，而是 runtime 级 update
+### 7.4 Configuration Hot Update is Not Restart-Based, but Runtime-Level Update
 
-初始化阶段的关键代码：
+Key code during initialization:
 
 ```ts
 settingsSubscriptionCleanup = settingsChangeDetector.subscribe(() => {
@@ -731,7 +731,7 @@ settingsSubscriptionCleanup = settingsChangeDetector.subscribe(() => {
 })
 ```
 
-以及显式刷新函数：
+And the explicit refresh function:
 
 ```ts
 function refreshConfig(): void {
@@ -742,37 +742,37 @@ function refreshConfig(): void {
 }
 ```
 
-这说明 sandbox config 不是一次性装配，而是 session 内可更新的。
+This shows that the sandbox config is not assembled once, but can be updated within a session.
 
-换句话说，Claude Code 不是：
+In other words, Claude Code does not require:
 
-- 改完设置
-- 必须退出 CLI
-- 重启后才能生效
+- Changing settings
+- Exiting the CLI
+- Restarting for changes to take effect
 
-它允许配置实时收缩/放宽，并把变化同步到底层 runtime。
+It allows real-time tightening/loosening of configuration and synchronizes changes to the underlying runtime.
 
-## 8. 第六步：网络越权时如何向用户抛出交互
+## 8. Step Six: How User Interaction Is Presented During Network Unauthorized Access
 
-相关实现：
+Related implementations:
 
 - [`src/components/permissions/SandboxPermissionRequest.tsx`](../src/components/permissions/SandboxPermissionRequest.tsx)
 
-sandbox 不只管文件系统，也管网络。对于超出 allowlist 的网络访问，UI 侧有单独的 permission dialog。
+The sandbox manages not only the filesystem but also the network. For network access beyond the allowlist, there is a separate permission dialog on the UI side.
 
-它的标题就很直白：
+Its title is very straightforward:
 
 ```ts
 <PermissionDialog title="Network request outside of sandbox">
 ```
 
-可选项包括：
+The available options include:
 
 - `Yes`
 - `Yes, and don't ask again for <host>`
 - `No, and tell Claude what to do differently`
 
-但如果 `allowManagedDomainsOnly` 打开，这个“don't ask again”选项会被拿掉：
+But if `allowManagedDomainsOnly` is enabled, the "don't ask again" option is removed:
 
 ```ts
 const managedDomainsOnly = shouldAllowManagedSandboxDomainsOnly()
@@ -780,47 +780,47 @@ const managedDomainsOnly = shouldAllowManagedSandboxDomainsOnly()
 !managedDomainsOnly ? [yes-dont-ask-again] : []
 ```
 
-这再次验证了前面的判断：
+This further validates the earlier assessment:
 
-- policy 不只是影响 runtime config
-- 还会收缩 UI 上可供用户做出的选择
+- Policy does not only affect the runtime config
+- It also constrains the choices available to the user on the UI
 
-## 9. 一个更准确的理解：sandbox 在这个项目里扮演什么角色
+## 9. A More Accurate Understanding: What Role Does the Sandbox Play in This Project
 
-到这里可以给出一个更准确的定义：
+At this point, a more accurate definition can be given:
 
-### 9.1 它不是 Docker 式“黑箱容器”
+### 9.1 It Is Not a Docker-Style "Black Box Container"
 
-这个项目的 sandbox 更像“围绕 Bash 执行链构建的策略型隔离层”，特点是：
+The sandbox in this project is more like a "policy-based isolation layer built around the Bash execution chain", characterized by:
 
-- 直接从 Claude Code 的 settings / permissions 生成 runtime config
-- 允许和应用层 permission system 联动
-- 有专门为 CLI 工作流补的后处理逻辑，比如 bare repo scrub
-- 会把 sandbox 的 allowlist 反哺给 path validation
+- Directly generating runtime config from Claude Code's settings / permissions
+- Allowing linkage with the application-layer permission system
+- Having post-processing logic specifically designed for CLI workflows, such as bare repo scrub
+- Feeding the sandbox's allowlist back to path validation
 
-这和“拉个容器跑命令”完全不是一回事。
+This is completely different from "spinning up a container and running commands".
 
-### 9.2 它也不是唯一安全边界
+### 9.2 It Is Not the Only Security Boundary
 
-源码已经反复说明这一点：
+The source code repeatedly states this:
 
-- `excludedCommands` 不是 security boundary
-- auto-allow 仍然要尊重显式 deny / ask
-- path validation 和 permission rules 仍然保留
+- `excludedCommands` is not a security boundary
+- Auto-allow still respects explicit deny / ask
+- Path validation and permission rules are still preserved
 
-因此更准确的说法是：
+Therefore, a more accurate statement is:
 
-- sandbox 负责 OS 级隔离
-- permission system 负责应用层规则表达和用户确认
-- 两者互相引用、互相补位
+- The sandbox is responsible for OS-level isolation
+- The permission system is responsible for application-layer rule expression and user confirmation
+- The two reference each other and complement each other
 
-## 10. 本章小结
+## 10. Chapter Summary
 
-这一章最核心的结论有四条：
+The core conclusions of this chapter are four:
 
-1. sandbox 的入口不在 `sandbox-adapter.ts`，而是在 `shouldUseSandbox()` 对每条 Bash 命令做路由决策
-2. `convertToSandboxRuntimeConfig()` 的本质不是字段映射，而是把 Claude Code 自己的 permission 语义翻译成 runtime 的文件系统和网络限制
-3. `bashPermissions.ts` 没有把“进沙箱”当成免审通行证，而是先尊重显式 deny / ask，再做 auto-allow
-4. 这套实现显式考虑了真实逃逸路径，例如 settings 投毒、skills 注入、Git bare repo 残留逃逸，并在执行后做宿主机级清理
+1. The entry point of the sandbox is not in `sandbox-adapter.ts`, but in `shouldUseSandbox()` making routing decisions for each Bash command
+2. The essence of `convertToSandboxRuntimeConfig()` is not field mapping, but translating Claude Code's own permission semantics into runtime filesystem and network restrictions
+3. `bashPermissions.ts` does not treat "entering sandbox" as a free pass, but first respects explicit deny / ask, then proceeds with auto-allow
+4. This implementation explicitly considers real escape paths, such as settings poisoning, skills injection, Git bare repo residual escape, and performs host-level cleanup after execution
 
-所以，Claude Code 的 sandbox 不是一个外围安全插件，而是和 Bash、permissions、settings、UI、清理逻辑深度耦合的执行安全基础设施。
+Therefore, Claude Code's sandbox is not a peripheral security plugin, but an execution security infrastructure deeply coupled with Bash, permissions, settings, UI, and cleanup logic.

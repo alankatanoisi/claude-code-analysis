@@ -130,6 +130,37 @@ import {
   runPreToolUseHooks,
 } from './toolHooks.js'
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the TOOL EXECUTION PIPELINE — the security boundary between
+// model intent and actual execution. Every tool call passes through this
+// pipeline before executing.
+//
+// EXECUTION PIPELINE (in order):
+// 1. Zod schema validation: Ensures input matches the tool's schema
+// 2. Semantic validation: tool.validateInput() for tool-specific checks
+// 3. Pre-tool hooks: runPreToolUseHooks() for dynamic capability extension
+// 4. Permission check: resolveHookPermissionDecision() + canUseTool()
+// 5. Tool execution: tool.call() with the validated, permissioned input
+// 6. Post-tool hooks: runPostToolUseHooks() for cleanup/logging
+//
+// DEFERRED TOOL SCHEMA HINT:
+// When a deferred tool (via ToolSearch) isn't in the discovered set, the
+// Zod error includes a hint telling the model to call ToolSearch first.
+// Without this, the model gets cryptic "expected array, got string" errors
+// and doesn't know how to recover.
+//
+// CONTEXT MODIFIER PATTERN:
+// Tools can return contextModifier functions that update ToolUseContext
+// for subsequent tools. This is how tools dynamically extend capabilities
+// (e.g., adding new MCP connections, updating file state caches).
+//
+// ERROR CLASSIFICATION:
+// classifyToolError() maps errors to telemetry-safe strings, avoiding
+// mangled constructor names from minification. Uses stable .name properties
+// and Node.js error codes (ENOENT, EACCES) for reliable diagnostics.
+// ============================================================================
+
 /** Minimum total hook duration (ms) to show inline timing summary */
 export const HOOK_TIMING_DISPLAY_THRESHOLD_MS = 500
 /** Log a debug warning when hooks/permission-decision block for this long. Matches

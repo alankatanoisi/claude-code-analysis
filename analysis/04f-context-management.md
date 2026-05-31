@@ -1,59 +1,59 @@
-# 第八章：Context 上下文管理机制
+# Chapter 8: Context Management Mechanism
 
-[返回总目录](../README.md)
-
----
-
-## 1. 导读
-
-在长生命周期的对话与自动化任务中，LLM 的上下文窗口（Context Window）始终是稀缺资源。Claude Code 并非简单地采用“超过截断点就丢弃历史”的暴力做法，而是构建了一整套复杂的监控、预测和自动压缩（Auto-Compact）机制。
-
-本章将深入解析系统如何动态计算 Context 消耗、如何在恰当的时机触发自动压缩，以及在压缩时如何保留关键状态并在极端情况下（如 Prompt Too Long 死锁）进行自我熔断与降级。
+[Back to Table of Contents](../README.md)
 
 ---
 
-## 2. 上下文额度的分配与基线
+## 1. Chapter Guide
 
-### 2.1 动态 Context 窗口边界
+In long-lived conversations and automation tasks, the LLM's context window is always a scarce resource. Claude Code does not simply employ a brute-force "discard history beyond the truncation point" approach; instead, it constructs a comprehensive set of monitoring, prediction, and auto-compact mechanisms.
 
-系统并不是将所有的模型 Context 窗口都开放给 Agent 自由写入，而是会进行严格的预留扣减。
+This chapter delves into how the system dynamically calculates context consumption, how it triggers auto-compaction at the right moment, and how it preserves critical state during compaction while performing self-fusing and degradation in extreme cases (such as Prompt Too Long deadlock).
 
-**真实源码**（[`src/utils/context.ts:18`](../src/utils/context.ts) 及 [`src/services/compact/autoCompact.ts:33`](../src/services/compact/autoCompact.ts)）：
+---
+
+## 2. Context Quota Allocation and Baseline
+
+### 2.1 Dynamic Context Window Boundary
+
+The system does not open the entire model context window for the Agent to freely write into; instead, it performs strict reservation deductions.
+
+**Actual source code** ([`src/utils/context.ts:18`](../src/utils/context.ts) and [`src/services/compact/autoCompact.ts:33`](../src/services/compact/autoCompact.ts)):
 
 ```typescript
-// 默认上下文窗口设为 200k（Claude 3 系默认值）
+// Default context window set to 200k (Claude 3 series default)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
 
-// 针对 [1m] 或特性开启的模型使用百万级上下文
+// For models supporting [1m] or feature-enabled models, use million-level context
 export function has1mContext(model: string): boolean {
-  return /\[1m\]/i.test(model)
+ return /\[1m\]/i.test(model)
 }
 
 // src/services/compact/autoCompact.ts
-// 预留给 Summary API 的最大输出 Token 数
+// Maximum output tokens reserved for the Summary API
 const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
 
-// 计算有效可用窗口：总窗口 - 为 Summary 预留的 token
+// Calculate effective available window: total window - tokens reserved for summary
 export function getEffectiveContextWindowSize(model: string): number {
-  const reservedTokensForSummary = Math.min(
-    getMaxOutputTokensForModel(model),
-    MAX_OUTPUT_TOKENS_FOR_SUMMARY,
-  )
-  let contextWindow = getContextWindowForModel(model)
+ const reservedTokensForSummary = Math.min(
+ getMaxOutputTokensForModel(model),
+ MAX_OUTPUT_TOKENS_FOR_SUMMARY,
+)
+ let contextWindow = getContextWindowForModel(model)
 
-  // 支持环境变量硬覆盖
-  const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
-  // ...
-  return contextWindow - reservedTokensForSummary
+ // Support environment variable hard override
+ const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+ //...
+ return contextWindow - reservedTokensForSummary
 }
 ```
 
-**设计要点**：
-为了确保当模型需要触发压缩（Auto Compact）时，API 还有足够的空间能够塞下原本的历史对话和用于生成 Summary 的提示词，系统会从总上下文（如 200k）中划走最高 20k 的预算空间（`MAX_OUTPUT_TOKENS_FOR_SUMMARY`）。
+**Design highlights**:
+To ensure that when the model needs to trigger auto-compaction, the API still has enough room to accommodate the original conversation history and the prompt for generating the summary, the system reserves up to 20k tokens of budget space (`MAX_OUTPUT_TOKENS_FOR_SUMMARY`) from the total context (e.g., 200k).
 
-### 2.2 最大输出 Token (Max Output Tokens) 的效率优化
+### 2.2 Max Output Tokens Efficiency Optimization
 
-系统在向 API 发送请求时，为了提升服务集群的利用率和优化排队速度（Slot Reservation），对 `max_tokens` 做了专门的限制设计。
+When sending requests to the API, the system applies a specific cap on `max_tokens` to improve server cluster utilization and optimize queuing speed (slot reservation).
 
 ```typescript
 // src/utils/context.ts:18
@@ -64,132 +64,136 @@ export const CAPPED_DEFAULT_MAX_TOKENS = 8_000
 export const ESCALATED_MAX_TOKENS = 64_000
 ```
 
-这里揭示了一个非常工程化的细节：虽然 Claude 3.5 Sonnet 支持 8k 的原生输出甚至配置可达更长，但实际分析表明业务的 99 分位数输出在 4,911 个 token 左右。因此即使模型能力超过 32k 输出，系统默认也会卡在 `8_000`，此举可极大地节约 API 层的 Slot 预约开销，遇到截断再触发 64k 的干净重试。
+This reveals a very engineering-oriented detail: although Claude 3.5 Sonnet supports 8k native output and can even be configured for longer, actual analysis shows that the business P99 output is around 4,911 tokens. Therefore, even if the model can handle more than 32k output, the system defaults to capping at `8_000`, which significantly reduces API layer slot reservation overhead. If truncation occurs, a clean retry at 64k is triggered.
 
 ---
 
-## 3. Auto-Compact 触发策略
+## 3. Auto-Compact Trigger Strategy
 
-通过每轮 API 调用获取的 token 消耗计数，系统会维护并监控一个“到达阈值即触发精简”的循环。
+Through the token consumption count obtained from each API call, the system maintains and monitors a loop that "triggers compaction upon reaching a threshold".
 
-**真实源码**（[`src/services/compact/autoCompact.ts:241`](../src/services/compact/autoCompact.ts)）：
+**Actual source code** ([`src/services/compact/autoCompact.ts:241`](../src/services/compact/autoCompact.ts)):
 
 ```typescript
 export async function autoCompactIfNeeded(
-  messages: Message[],
-  toolUseContext: ToolUseContext,
-  cacheSafeParams: CacheSafeParams,
-  querySource?: QuerySource,
-  tracking?: AutoCompactTrackingState,
-  snipTokensFreed?: number,
+ messages: Message[],
+ toolUseContext: ToolUseContext,
+ cacheSafeParams: CacheSafeParams,
+ querySource?: QuerySource,
+ tracking?: AutoCompactTrackingState,
+ snipTokensFreed?: number,
 ): Promise<{ wasCompacted: boolean; compactionResult?: CompactionResult }> {
-  
-  // 熔断器：如果连续 compaction 失败达到 3 次，就完全停发该会话的 autocompact 请求。
-  // 防止一些不可恢复的大小超限反复徒劳请求并浪费大量 API 额度
-  if (tracking?.consecutiveFailures !== undefined &&
-      tracking.consecutiveFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
-    return { wasCompacted: false }
-  }
+ 
+ // Circuit breaker: if consecutive compaction failures reach 3 times,
+ // completely stop autocompact requests for this session.
+ // Prevents futile repeated requests due to unrecoverable size overruns wasting large amounts of API quota
+ if (tracking?.consecutiveFailures !== undefined &&
+ tracking.consecutiveFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
+ return { wasCompacted: false }
+ }
 
-  const model = toolUseContext.options.mainLoopModel
-  const shouldCompact = await shouldAutoCompact(messages, model, querySource, snipTokensFreed)
+ const model = toolUseContext.options.mainLoopModel
+ const shouldCompact = await shouldAutoCompact(messages, model, querySource, snipTokensFreed)
 
-  if (!shouldCompact) {
-    return { wasCompacted: false }
-  }
+ if (!shouldCompact) {
+ return { wasCompacted: false }
+ }
 
-  try {
-    const compactionResult = await compactConversation(
-      messages,
-      toolUseContext,
-      cacheSafeParams,
-      true, // suppressFollowUpQuestions
-    )
-    return { wasCompacted: true, compactionResult, consecutiveFailures: 0 }
-  } catch (error) {
-    // 捕获失败，更新连续失败记录触发 Circuit Breaker
-    const nextFailures = (tracking?.consecutiveFailures ?? 0) + 1
-    return { wasCompacted: false, consecutiveFailures: nextFailures }
-  }
+ try {
+ const compactionResult = await compactConversation(
+ messages,
+ toolUseContext,
+ cacheSafeParams,
+ true, // suppressFollowUpQuestions
+)
+ return { wasCompacted: true, compactionResult, consecutiveFailures: 0 }
+ } catch (error) {
+ // Capture failure, update consecutive failure count to trigger Circuit Breaker
+ const nextFailures = (tracking?.consecutiveFailures ?? 0) + 1
+ return { wasCompacted: false, consecutiveFailures: nextFailures }
+ }
 }
 ```
 
-系统设置了一个双重保证：
-1. **缓冲界限**：在上下文快满时前置 `13_000` 个 tokens (`AUTOCOMPACT_BUFFER_TOKENS`) 触发缩减。
-2. **熔断机制**：`MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES` 控制在极端情况下（比如用户的单张超级图片就超过了上下文）不再徒劳压缩发送导致无限报错循环（数据表明这个小判断每天为大盘省下了约 250K 次死锁 API 调用）。
+The system sets up a dual guarantee:
+1. **Buffer threshold**: triggers compaction with `13_000` tokens of headroom (`AUTOCOMPACT_BUFFER_TOKENS`) before the context is nearly full.
+2. **Circuit breaker**: `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES` controls against futile compaction attempts in extreme cases (e.g., a single super-large image from the user exceeds the context), preventing infinite error loops (data shows this small check saves approximately 250K deadlock API calls per day across the platform).
 
 ---
 
-## 4. 压缩与上下文反向重建机制
+## 4. Compression and Context Reverse Reconstruction Mechanism
 
-当我们压缩掉前面的 Messages 后，Agent 最害怕的不是遗忘早期的闲聊，而是**丢失了加载到一半的外部资源文件与开放工具**。因此，`compactConversation` 处理了重大的“上下文重建”动作。
+When we compress the preceding Messages, what the Agent fears most is not forgetting early, but **losing external resource files loaded midway and open tools**. Therefore, `compactConversation` handles significant "context reconstruction" actions.
 
-### 4.1 清理多媒体与低价值负载
+### 4.1 Cleaning Up Multimedia and Low-Value Payloads
 
-在交付给 Forked Agent 进行总结之前，先脱水非关键素材以确保 Summary API 自己不会由于体积太大而 OOM：
+Before handing off to the Forked Agent for summarization, non-critical material is first dehydrated to ensure the Summary API itself does not OOM due to excessive size:
 
 ```typescript
 // src/services/compact/compact.ts:145
 export function stripImagesFromMessages(messages: Message[]): Message[] {
-  // 剔除 User 发送的面版图片、Tool 传回的文件等
-  // 将所有的 { type: 'image' } / { type: 'document' } 剔除并替换为等效的文本提示 [image] 
+ // Remove panel images sent by the user, files returned by Tool, etc.
+ // Replace all { type: 'image' } / { type: 'document' } with equivalent text hints [image] 
 }
 
-// 剔除将在紧接着的 post-compact 中全量补偿附加的内容，防止二次总结造成幻觉
+// Remove attachments that will be fully compensated in the post-compact phase,
+// preventing secondary summarization from causing hallucinations
 export function stripReinjectedAttachments(messages: Message[]): Message[] {
-  // 例如剔除 skill_discovery 等 attachment
+ // e.g., remove skill_discovery and other attachments
 }
 ```
 
-### 4.2 API 的 Prompt 缓存复用
+### 4.2 API Prompt Cache Reuse
 
-这也是极其巧妙的细节。总结是在 Forked Agent 里执行的（和主路经不同），但官方选择开启 prompt 缓存共享。
+This is also an extremely clever detail. The summarization is performed in a Forked Agent (different from the main path), but the official implementation chooses to share the prompt cache.
 
 ```typescript
 // src/services/compact/compact.ts:435
-// Forked Agent 借用主对话上下文的 Prompt Cache。
-// 测试（2026年1月）证明这个借用机制能省掉每次压缩所需的极大头部填充 Token 开销
+// Forked Agent borrows the main conversation context's Prompt Cache.
+// Tests (January 2026) prove this borrowing mechanism saves significant
+// head-filling token overhead required for each compaction
 const promptCacheSharingEnabled = getFeatureValue_CACHED_MAY_BE_STALE(
-  'tengu_compact_cache_prefix',
-  true,
+ 'tengu_compact_cache_prefix',
+ true,
 )
 ```
 
-### 4.3 PTL 防御（Prompt Too Long Fallback）
+### 4.3 PTL Defense (Prompt Too Long Fallback)
 
-倘若上述所有措施仍旧让总结服务报 `Prompt Too Long` 错误：
+If all the above measures still cause the summarization service to report a `Prompt Too Long` error:
 
 ```typescript
 // src/services/compact/compact.ts:462
-// CC-1180: 若 compact request 本身也超限，则剥洋葱。
-// 一次剥掉 20% 旧分组进行重试。这个是最后的“救命稻草”，虽然有损，但能解救被锁死的会话。
+// CC-1180: If the compact request itself also exceeds the limit, peel the onion.
+// Peel off 20% of old groups at a time and retry. This is the last "lifeline",
+// albeit lossy, it can rescue a locked session.
 const truncated = ptlAttempts <= MAX_PTL_RETRIES
-  ? truncateHeadForPTLRetry(messagesToSummarize, summaryResponse)
-  : null
+ ? truncateHeadForPTLRetry(messagesToSummarize, summaryResponse)
+ : null
 ```
 
-### 4.4 状态重启点补偿（State Re-injection）
+### 4.4 State Restart Point Compensation (State Re-injection)
 
-总结一旦完成，原本长长的消息列表被抽成了一条极短的 `Summary Message`。但 Agent 对后续工作的理解不能断裂。
+Once the summarization is complete, the originally long message list is condensed into a very short `Summary Message`. But the Agent's understanding of subsequent work must not be broken.
 
 ```typescript
 // src/services/compact/compact.ts:517
-// ===== 保存状态重组补偿区 =====
+// ===== State Re-injection Compensation Zone =====
 
-// 1. 获取并重新添加刚刚通过 FileReadTool 查看并且还没丢掉缓存的文件（带截断上限）
-const fileAttachments = createPostCompactFileAttachments(preCompactReadFileState, ...)
+// 1. Retrieve and re-add files just viewed via FileReadTool that haven't lost their cache (with truncation limit)
+const fileAttachments = createPostCompactFileAttachments(preCompactReadFileState,...)
 
-// 2. 重新加入之前仍在进行中的 Plan / Skill
+// 2. Re-add ongoing Plan / Skill
 const planAttachment = createPlanAttachmentIfNeeded(context.agentId)
 const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
 
-// 3. 把被干掉的 Deferred Delta 工具协议重新用消息发给模型
+// 3. Re-send the eliminated Deferred Delta tool protocol back to the model as messages
 for (const att of getDeferredToolsDeltaAttachment(...)) {
-  postCompactFileAttachments.push(createAttachmentMessage(att))
+ postCompactFileAttachments.push(createAttachmentMessage(att))
 }
 ```
 
-**综合起来，上下文平稳度过“压缩”时的真正面貌是：**
-`[System 边界宣告]` + `[精简文本摘要]` + `[正在查看的文件内文截取]` + `[正在做的 Plan]` + `[仍然激活的各种 MCP Server 和 Tools 的完整声明]`。
+**In summary, the true picture of context smoothly navigating through "compaction" is:**
+`[System boundary declaration]` + `[Condensed text summary]` + `[Truncated content of files being viewed]` + `[Plan in progress]` + `[Full declarations of still-active MCP Servers and Tools]`.
 
-这个机制确保了大模型既释放了冗金庞大的旧文本历史，却依然如同长时程 Agent 那样“身处工作台旁边且手持刚刚用到的工具”，完全无缝连接下一轮输入。
+This mechanism ensures that the large model has freed up the verbose old text history, yet still remains "at the workstation with the tools just used" like a long-running Agent, completely seamlessly connecting to the next round of input.

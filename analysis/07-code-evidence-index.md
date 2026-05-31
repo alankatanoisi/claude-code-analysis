@@ -1,12 +1,12 @@
-# 第十七章：代码证据索引
+# Chapter 17: Code Evidence Index
 
-[返回总目录](../README.md)
+[Back to Table of Contents](../README.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-这一章不做展开分析，只做证据索引，便于从总目录跳到源码。
+This chapter does not provide expanded analysis; it only serves as an evidence index for easy navigation from the table of contents to the source code.
 
-## 2. 入口与启动链路
+## 2. Entry and Startup Pipeline
 
 - [`src/entrypoints/cli.tsx`](../src/entrypoints/cli.tsx)
 - [`src/main.tsx`](../src/main.tsx)
@@ -15,7 +15,7 @@
 - [`src/replLauncher.tsx`](../src/replLauncher.tsx)
 - [`src/screens/REPL.tsx`](../src/screens/REPL.tsx)
 
-## 3. Query / Agent 内核
+## 3. Query / Agent Core
 
 - [`src/query.ts`](../src/query.ts)
 - [`src/QueryEngine.ts`](../src/QueryEngine.ts)
@@ -23,27 +23,27 @@
 - [`src/constants/prompts.ts`](../src/constants/prompts.ts)
 - [`src/context.ts`](../src/context.ts)
 
-## 4. 工具与权限
+## 4. Tools and Permissions
 
 - [`src/tools.ts`](../src/tools.ts)
 - [`src/Tool.ts`](../src/Tool.ts)
 - [`src/services/tools/toolOrchestration.ts`](../src/services/tools/toolOrchestration.ts)
 - [`src/utils/permissions/permissionSetup.ts`](../src/utils/permissions/permissionSetup.ts)
 
-## 5. 状态与 UI
+## 5. State and UI
 
 - [`src/state/AppStateStore.ts`](../src/state/AppStateStore.ts)
 - [`src/state/store.ts`](../src/state/store.ts)
 - [`src/interactiveHelpers.tsx`](../src/interactiveHelpers.tsx)
 
-## 6. transcript / 持久化 / 会话恢复
+## 6. Transcript / Persistence / Session Recovery
 
 - [`src/utils/sessionStorage.ts`](../src/utils/sessionStorage.ts)
 - [`src/services/api/sessionIngress.ts`](../src/services/api/sessionIngress.ts)
 - [`src/utils/settings/types.ts`](../src/utils/settings/types.ts)
 - [`src/utils/gracefulShutdown.ts`](../src/utils/gracefulShutdown.ts)
 
-## 7. memory 体系
+## 7. Memory System
 
 - [`src/memdir/memdir.ts`](../src/memdir/memdir.ts)
 - [`src/memdir/paths.ts`](../src/memdir/paths.ts)
@@ -56,7 +56,7 @@
 - [`src/tools/AgentTool/agentMemorySnapshot.ts`](../src/tools/AgentTool/agentMemorySnapshot.ts)
 - [`src/tools/AgentTool/loadAgentsDir.ts`](../src/tools/AgentTool/loadAgentsDir.ts)
 
-## 8. analytics / 隐私 / 反馈
+## 8. Analytics / Privacy / Feedback
 
 - [`src/services/analytics/index.ts`](../src/services/analytics/index.ts)
 - [`src/services/analytics/config.ts`](../src/services/analytics/config.ts)
@@ -70,7 +70,7 @@
 - [`src/components/grove/Grove.tsx`](../src/components/grove/Grove.tsx)
 - [`src/components/FeedbackSurvey/submitTranscriptShare.ts`](../src/components/FeedbackSurvey/submitTranscriptShare.ts)
 
-## 9. MCP / remote / swarm / team memory
+## 9. MCP / Remote / Swarm / Team Memory
 
 - [`src/services/mcp/client.ts`](../src/services/mcp/client.ts)
 - [`src/services/mcp/auth.ts`](../src/services/mcp/auth.ts)
@@ -81,6 +81,6 @@
 - [`src/services/teamMemorySync/index.ts`](../src/services/teamMemorySync/index.ts)
 - [`src/services/teamMemorySync/watcher.ts`](../src/services/teamMemorySync/watcher.ts)
 
-## 10. 本章小结
+## 10. Chapter Summary
 
-本索引章节的作用是把“结论”与“证据”分离。前几章用于叙述，当前章节用于追溯和复核。
+The purpose of this index chapter is to separate "conclusions" from "evidence." The preceding chapters are for narrative, while this chapter is for tracing and verification.

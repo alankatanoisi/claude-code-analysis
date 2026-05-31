@@ -1,64 +1,64 @@
-# 组件体系详解（一）：组件总览、分层与依赖主干
+# Component System Deep Dive (1): Component Overview, Layering & Dependency Backbone
 
-[返回总目录](../../README.md)
+[Back to Table of Contents](../../README.md)
 
-[下一章：核心交互组件](./02-core-interaction-components.md)
+[Next Chapter: Core Interaction Components](./02-core-interaction-components.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-这一组章节不再从“执行内核”出发，而是专门从 `src/components/` 的角度，回答三个问题：
+This set of chapters no longer starts from the "execution kernel," but instead approaches from `src/components/`, answering three questions:
 
-1. 组件树是如何分层的，哪些组件是真正的中枢。
-2. 各组件族之间的依赖方向是什么，子组件如何被上层编排。
-3. 组件实现中有哪些共性设计手法。
+1. How is the component tree layered, and which components are the true hubs.
+2. What are the dependency directions between component families, and how do child components get orchestrated by their parents.
+3. What common design patterns exist across component implementations.
 
-结论先行：这个项目的组件体系不是“页面 + 若干按钮”的前端结构，而是一个围绕终端 agent 工作台组织起来的 TUI 组件平台。它的典型路径是：
+TL;DR: This project's component system is not a "page + buttons" frontend structure, but a TUI component platform organized around a terminal agent workspace. Its typical path is:
 
-`App -> REPL/FullscreenLayout -> Messages + PromptInput -> 能力弹层/能力面板 -> services/state/hooks/tools/tasks`
+`App -> REPL/FullscreenLayout -> Messages + PromptInput -> Capability Layers/Capability Panels -> services/state/hooks/tools/tasks`
 
-其中真正的双中枢是：
+The true dual hubs are:
 
 - [`src/components/Messages.tsx`](../../src/components/Messages.tsx)
 - [`src/components/PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx)
 
-前者负责“展示已经发生了什么”，后者负责“组织下一步要做什么”。
+The former is responsible for "displaying what has happened," and the latter for "organizing what to do next."
 
-先给出组件主干图：
+Here is the component backbone diagram:
 
 ```text
 App
-  -> REPL / FullscreenLayout
-     -> Messages
-     |    -> VirtualMessageList
-     |         -> MessageRow / Message / messages/*
-     |
-     -> PromptInput
-          -> Footer / Suggestions / Notifications
-          -> QuickOpen / Search / Tasks / Teams / Bridge / ModelPicker
+ -> REPL / FullscreenLayout
+ -> Messages
+ | -> VirtualMessageList
+ | -> MessageRow / Message / messages/*
+ |
+ -> PromptInput
+ -> Footer / Suggestions / Notifications
+ -> QuickOpen / Search / Tasks / Teams / Bridge / ModelPicker
 
-Messages 与 PromptInput 都向下依赖：
-  -> AppState
-  -> hooks
-  -> services
+Messages and PromptInput both depend downward on:
+ -> AppState
+ -> hooks
+ -> services
 ```
 
-## 2. 组件分层
+## 2. Component Layering
 
-### 2.1 Provider 与根包装层
+### 2.1 Provider & Root Wrapper Layer
 
-根包装组件是 [`src/components/App.tsx`](../../src/components/App.tsx)。
+The root wrapper component is [`src/components/App.tsx`](../../src/components/App.tsx).
 
-它本身不做复杂 UI，而是负责把交互会话需要的上下文先挂起来：
+It does not implement complex UI itself, but is responsible for setting up the context needed for an interactive session:
 
-- [`src/state/AppState.tsx`](../../src/state/AppState.tsx) 提供全局状态仓库
-- [`src/context/stats.tsx`](../../src/context/stats.tsx) 提供统计上下文
-- [`src/context/fpsMetrics.tsx`](../../src/context/fpsMetrics.tsx) 提供渲染性能度量
+- [`src/state/AppState.tsx`](../../src/state/AppState.tsx) provides the global state store
+- [`src/context/stats.tsx`](../../src/context/stats.tsx) provides statistics context
+- [`src/context/fpsMetrics.tsx`](../../src/context/fpsMetrics.tsx) provides rendering performance metrics
 
-这说明该项目的组件树一开始就不是“无状态展示树”，而是“带运行时状态、统计、性能采样的工作台树”。
+This shows that the project's component tree is not a "stateless display tree" from the start, but a "workspace tree with runtime state, statistics, and performance sampling."
 
-### 2.2 会话工作台层
+### 2.2 Session Workspace Layer
 
-会话工作台层的职责是把消息区、输入区、滚动区、状态条、弹层组合起来。核心文件包括：
+The session workspace layer is responsible for combining the message area, input area, scroll area, status bar, and overlays. Core files include:
 
 - [`src/components/FullscreenLayout.tsx`](../../src/components/FullscreenLayout.tsx)
 - [`src/components/Messages.tsx`](../../src/components/Messages.tsx)
@@ -66,15 +66,15 @@ Messages 与 PromptInput 都向下依赖：
 - [`src/components/ScrollKeybindingHandler.tsx`](../../src/components/ScrollKeybindingHandler.tsx)
 - [`src/hooks/useGlobalKeybindings.tsx`](../../src/hooks/useGlobalKeybindings.tsx)
 
-这一层是真正的“终端工作台壳层”。它负责：
+This layer is the true "terminal workspace shell." It is responsible for:
 
-- 把 transcript 和输入框装配到同一个交互平面
-- 管理全局快捷键、滚动、搜索、转录模式、brief 模式
-- 给各种对话框和面板提供挂载位置
+- Assembling the transcript and input box into the same interactive plane
+- Managing global shortcuts, scrolling, searching, transcript mode, brief mode
+- Providing mount points for various dialogs and panels
 
-### 2.3 会话渲染层
+### 2.3 Session Rendering Layer
 
-会话渲染层由以下组件链构成：
+The session rendering layer consists of the following component chain:
 
 - [`src/components/Messages.tsx`](../../src/components/Messages.tsx)
 - [`src/components/VirtualMessageList.tsx`](../../src/components/VirtualMessageList.tsx)
@@ -82,16 +82,16 @@ Messages 与 PromptInput 都向下依赖：
 - [`src/components/Message.tsx`](../../src/components/Message.tsx)
 - [`src/components/messages`](../../src/components/messages)
 
-这一层的职责不是“简单 map 一组消息”，而是：
+The responsibility of this layer is not "simply mapping an array of messages," but:
 
-- 归一化消息
-- 对工具调用、read/search、hook、后台 bash 通知做折叠与分组
-- 根据 fullscreen/transcript/brief 模式走不同渲染路径
-- 在长会话下通过虚拟列表与 offscreen freeze 降低重绘成本
+- Normalizing messages
+- Folding and grouping tool calls, read/search, hooks, and background bash notifications
+- Taking different rendering paths depending on fullscreen/transcript/brief mode
+- Reducing re-render cost through virtual list and offscreen freeze for long sessions
 
-### 2.4 输入编排层
+### 2.4 Input Orchestration Layer
 
-输入编排层以 [`src/components/PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx) 为主入口，向下拆成：
+The input orchestration layer uses [`src/components/PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx) as its main entry point, decomposing into:
 
 - `PromptInputFooter`
 - `PromptInputFooterLeftSide`
@@ -100,37 +100,37 @@ Messages 与 PromptInput 都向下依赖：
 - `PromptInputQueuedCommands`
 - `PromptInputStashNotice`
 - `Notifications`
-- 若干 `use*` 辅助 hooks
+- Several `use*` helper hooks
 
-这一层负责把用户真实输入、补全建议、历史检索、图片粘贴、mode 切换、后台任务入口、团队/bridge/quick open/global search 等统一起来。
+This layer is responsible for unifying actual user input, completion suggestions, history retrieval, image pasting, mode switching, background task entry points, team/bridge/quick open/global search, etc.
 
-### 2.5 能力面板与能力弹层层
+### 2.5 Capability Panels & Capability Overlay Layer
 
-这一层是“控制面 UI”，组件分布最广，主要包括：
+This is the "control plane UI," with the most widely distributed components, mainly including:
 
-- agents：[`src/components/agents`](../../src/components/agents)
-- permissions：[`src/components/permissions`](../../src/components/permissions)
-- tasks：[`src/components/tasks`](../../src/components/tasks)
-- mcp：[`src/components/mcp`](../../src/components/mcp)
-- Settings：[`src/components/Settings`](../../src/components/Settings)
-- teams：[`src/components/teams`](../../src/components/teams)
-- hooks：[`src/components/hooks`](../../src/components/hooks)
-- memory：[`src/components/memory`](../../src/components/memory)
-- skills：[`src/components/skills`](../../src/components/skills)
-- sandbox：[`src/components/sandbox`](../../src/components/sandbox)
+- agents[`src/components/agents`](../../src/components/agents)
+- permissions[`src/components/permissions`](../../src/components/permissions)
+- tasks[`src/components/tasks`](../../src/components/tasks)
+- mcp[`src/components/mcp`](../../src/components/mcp)
+- Settings[`src/components/Settings`](../../src/components/Settings)
+- teams[`src/components/teams`](../../src/components/teams)
+- hooks[`src/components/hooks`](../../src/components/hooks)
+- memory[`src/components/memory`](../../src/components/memory)
+- skills[`src/components/skills`](../../src/components/skills)
+- sandbox[`src/components/sandbox`](../../src/components/sandbox)
 
-这些组件不直接驱动 query 主循环，但它们决定了工作台如何暴露 agent 平台能力。
+These components do not directly drive the main query loop, but they determine how the workspace exposes agent platform capabilities.
 
-### 2.6 设计系统与通用构件层
+### 2.6 Design System & Common Components Layer
 
-这一层主要在：
+This layer mainly lives in:
 
 - [`src/components/design-system`](../../src/components/design-system)
 - [`src/components/ui`](../../src/components/ui)
 - [`src/components/wizard`](../../src/components/wizard)
 - [`src/components/CustomSelect`](../../src/components/CustomSelect)
 
-它们提供了终端 UI 的复用基础件，例如：
+They provide reusable building blocks for the terminal UI, such as:
 
 - `Dialog`
 - `Pane`
@@ -141,87 +141,87 @@ Messages 与 PromptInput 都向下依赖：
 - `WizardProvider`
 - `Select`
 
-项目并没有依赖一个外部成熟终端设计系统，而是在 Ink 之上自己长出了一层组件基座。
+The project does not depend on an external mature terminal design system, but has grown its own component foundation on top of Ink.
 
-## 3. 组件族分布
+## 3. Component Family Distribution
 
-按目录统计，`src/components/` 的主要组件族如下：
+By directory statistics, the main component families of `src/components/` are as follows:
 
-| 组件族 | 文件量 | 说明 |
+| Component Family | File Count | Description |
 | --- | ---: | --- |
-| `permissions` | 51 | 权限请求、文件对比、规则与审批 UI |
-| `messages` | 41 | 消息类型渲染与 tool result 子组件 |
-| `agents` | 26 | agent 列表、详情、编辑、创建向导 |
-| `PromptInput` | 21 | 输入框、建议、通知、footer、mode |
-| `design-system` | 16 | 终端 UI 基础组件 |
-| `mcp` | 13 | MCP 服务与工具视图 |
-| `tasks` | 12 | 后台任务列表、详情、进度视图 |
-| `Spinner` | 12 | 各类状态 spinner 变体 |
-| `FeedbackSurvey` | 9 | 调研/反馈 UI |
-| `CustomSelect` | 10 | 下拉、选择器、光标移动逻辑 |
+| `permissions` | 51 | Permission requests, file comparison, rules & approval UI |
+| `messages` | 41 | Message type rendering & tool result sub-components |
+| `agents` | 26 | Agent list, details, editing, creation wizard |
+| `PromptInput` | 21 | Input box, suggestions, notifications, footer, mode |
+| `design-system` | 16 | Terminal UI base components |
+| `mcp` | 13 | MCP service & tool views |
+| `tasks` | 12 | Background task list, details, progress view |
+| `Spinner` | 12 | Various state spinner variants |
+| `FeedbackSurvey` | 9 | Survey/feedback UI |
+| `CustomSelect` | 10 | Dropdown, selector, cursor movement logic |
 
-这组统计非常说明问题：在该项目里，“权限、消息、agent、输入、MCP、任务”才是组件设计的真正重心。
+This set of statistics is very telling: in this project, "permissions, messages, agents, input, MCP, tasks" are the true center of gravity of component design.
 
-## 4. 依赖主干
+## 4. Dependency Backbone
 
-### 4.1 主干依赖关系
+### 4.1 Backbone Dependency Relationships
 
-从高到低，可以把组件依赖关系概括为：
+From high to low, the component dependency relationships can be summarized as:
 
-1. `App` 先建立 Provider。
-2. 工作台层将 `Messages` 与 `PromptInput` 并列挂载。
-3. `Messages` 将消息继续拆到 `VirtualMessageList -> MessageRow -> Message -> messages/*`。
-4. `PromptInput` 将输入与面板继续拆到 footer、suggestions、dialogs、task/team/bridge/search 等子组件。
-5. 面板类组件再向下依赖 `state/context/hooks/services/tools/tasks`。
+1. `App` first establishes Providers.
+2. The workspace layer mounts `Messages` and `PromptInput` side by side.
+3. `Messages` further splits messages into `VirtualMessageList -> MessageRow -> Message -> messages/*`.
+4. `PromptInput` further splits input and panels into footer, suggestions, dialogs, task/team/bridge/search, and other sub-components.
+5. Panel-type components then depend downward on `state/context/hooks/services/tools/tasks`.
 
-这种依赖方向有两个特点：
+This dependency direction has two characteristics:
 
-- 交互主干非常清晰，主链路没有被“设置页”之类的边缘能力污染。
-- 能力面板不直接互相依赖，而是共同依赖 `AppState`、hooks 和 services，所以横向耦合可控。
+- The interaction backbone is very clear, and the main path is not polluted by edge capabilities like "settings pages."
+- Capability panels do not depend directly on each other, but collectively depend on `AppState`, hooks, and services, so horizontal coupling is controllable.
 
-也可以用“编排层 -> 渲染层 -> 状态/服务层”的形式理解：
+It can also be understood in the form of "orchestration layer -> rendering layer -> state/service layer":
 
 ```text
-编排层
-  - App
-  - REPL
-  - Messages
-  - PromptInput
-    |
-    +--> 渲染层
-    |      - message leaves
-    |      - dialog leaves
-    |      - select leaves
-    |
-    +--> 能力面板层
-           - permissions
-           - agents
-           - mcp
-           - tasks
-           - teams
+Orchestration Layer
+ - App
+ - REPL
+ - Messages
+ - PromptInput
+ |
+ +--> Rendering Layer
+ | - message leaves
+ | - dialog leaves
+ | - select leaves
+ |
+ +--> Capability Panel Layer
+ - permissions
+ - agents
+ - mcp
+ - tasks
+ - teams
 
-渲染层 / 能力面板层
-  -> 状态与上下文
-     - AppState
-     - overlay
-     - notifications
-  -> hooks / services / tools / tasks
+Rendering Layer / Capability Panel Layer
+ -> State & Context
+ - AppState
+ - overlay
+ - notifications
+ -> hooks / services / tools / tasks
 ```
 
-### 4.2 状态注入方式
+### 4.2 State Injection Method
 
-组件层没有采用传统 Redux `connect` 式写法，而是大量使用：
+The component layer does not use the traditional Redux `connect` style, but heavily uses:
 
-- [`src/state/AppState.tsx`](../../src/state/AppState.tsx) 中的 `useAppState`
+- `useAppState` from [`src/state/AppState.tsx`](../../src/state/AppState.tsx)
 - `useSetAppState`
 - `useAppStateStore`
-- context 中的 overlay、notifications、mailbox、modal 等 provider
+- Overlay, notifications, mailbox, modal and other providers from context
 
-`useAppState` 的切片订阅设计很关键。它要求 selector 直接返回稳定切片，而不是临时对象，这样组件不会因为全局状态细微变化而整体重渲染。
+The slice subscription design of `useAppState` is critical. It requires the selector to directly return stable slices, not temporary objects, so components do not re-render wholesale due to minor changes in global state.
 
-### 4.3 hooks 驱动而不是类控制器驱动
+### 4.3 Hook-Driven Rather Than Class Controller-Driven
 
-组件体系大量依赖 hooks 作为行为注入层，典型包括：
+The component system heavily relies on hooks as the behavior injection layer, typically including:
 
 - [`src/hooks/useGlobalKeybindings.tsx`](../../src/hooks/useGlobalKeybindings.tsx)
 - [`src/hooks/useVirtualScroll.ts`](../../src/hooks/useVirtualScroll.ts)
@@ -230,74 +230,74 @@ Messages 与 PromptInput 都向下依赖：
 - [`src/hooks/useCommandQueue.ts`](../../src/hooks/useCommandQueue.ts)
 - [`src/hooks/usePromptSuggestion.ts`](../../src/hooks/usePromptSuggestion.ts)
 
-这意味着组件的“显示结构”和“交互行为”被明显拆开，后续新增能力时，优先是新增 hook 或 service，而不是继续把单个组件写得更胖。
+This means the "display structure" and "interaction behavior" of components are clearly separated. When adding new capabilities in the future, the priority is to add new hooks or services, rather than continuing to bloat individual components.
 
-## 5. 实现层面的共性设计
+## 5. Common Design Patterns at the Implementation Level
 
-### 5.1 明显的 orchestrator / leaf 分层
+### 5.1 Clear Orchestrator / Leaf Layering
 
-几乎每个组件族都可以区分出两类组件：
+Almost every component family can distinguish two types of components:
 
-- orchestrator：管理状态、切换视图、调用 hooks 或 services
-- leaf：只负责渲染某个具体子块
+- orchestrator: manages state, switches views, calls hooks or services
+- leaf: only responsible for rendering a specific sub-block
 
-例如消息链路中：
+For example, in the message chain:
 
-- orchestrator 是 `Messages`、`MessageRow`、`Message`
-- leaf 是 `AssistantTextMessage`、`UserTextMessage`、`RateLimitMessage` 等
+- orchestrators are `Messages`, `MessageRow`, `Message`
+- leaves are `AssistantTextMessage`, `UserTextMessage`, `RateLimitMessage`, etc.
 
-例如 agent 组件族中：
+For example, in the agent component family:
 
-- orchestrator 是 `AgentsMenu`
-- leaf 是 `AgentDetail`、`AgentEditor`、`ColorPicker`、`ToolSelector`
+- orchestrator is `AgentsMenu`
+- leaves are `AgentDetail`, `AgentEditor`, `ColorPicker`, `ToolSelector`
 
-这种拆法使上层负责编排，下层负责可替换渲染。
+This decomposition allows the upper layer to be responsible for orchestration, while the lower layer handles replaceable rendering.
 
-### 5.2 为终端性能专门优化
+### 5.2 Specialized Optimization for Terminal Performance
 
-从源码能看到不少不是普通 Web React 项目常见的优化点：
+From the source code, you can see many optimization points not typically found in ordinary Web React projects:
 
-- `VirtualMessageList` 做消息虚拟化与搜索索引
-- `OffscreenFreeze` 避免离屏区域重复重绘
-- `MessageRow` 预先算 `hasContentAfterIndex`，避免把整个历史数组传给子项
-- `Messages` 对 logo header 做 memo，避免前导节点污染整屏 blit
+- `VirtualMessageList` handles message virtualization and search indexing
+- `OffscreenFreeze` avoids repeated re-rendering of offscreen areas
+- `MessageRow` pre-computes `hasContentAfterIndex`, avoiding passing the entire history array to children
+- `Messages` memoizes the logo header, preventing leading nodes from polluting full-screen blits
 
-说明作者非常清楚：这个 UI 的瓶颈不是 DOM，而是终端屏幕重绘与超长 transcript。
+This shows the author is well aware: the bottleneck of this UI is not the DOM, but terminal screen redraws and extremely long transcripts.
 
-### 5.3 通过 `feature()` 和按需 `require()` 做编译裁剪
+### 5.3 Compile-Time Trimming via `feature()` and Lazy `require()`
 
-很多组件里出现：
+Many components contain:
 
 - `feature('...')`
-- 条件 `require(...)`
+- Conditional `require(...)`
 
-例如权限、workflow、monitor、theme watcher、brief/proactive 等都采用了这类模式。作用是：
+For example, permissions, workflow, monitor, theme watcher, brief/proactive, etc. all adopt this pattern. The effect is:
 
-- ant-only 或内部门控功能不会泄露到外部构建
-- 打包时可以 dead-code eliminate
-- 组件不会为不可用功能平白引入依赖
+- ant-only or internally gated features do not leak to external builds
+- Can be dead-code eliminated during bundling
+- Components do not unnecessarily introduce dependencies for unavailable features
 
-### 5.4 对终端交互细节有系统化抽象
+### 5.4 Systematic Abstraction of Terminal Interaction Details
 
-组件层不只是“能显示”，而是系统化抽象了终端交互对象：
+The component layer doesn't just "display things," but systematically abstracts terminal interaction objects:
 
-- Dialog 与 Confirmation keybinding
-- overlay 注册与冲突屏蔽
-- sticky footer / modal / fullscreen scroll
-- theme preview / auto theme watcher
-- text input 与 vim input 的双轨支持
+- Dialog and Confirmation keybinding
+- Overlay registration and conflict masking
+- Sticky footer / modal / fullscreen scroll
+- Theme preview / auto theme watcher
+- Dual-track support for text input and vim input
 
-这套抽象说明项目本质上是在做终端 IDE 风格工作台，而不是单页聊天窗口。
+This set of abstractions shows that the project is essentially building a terminal IDE-style workspace, not a single-page chat window.
 
-## 6. 本章小结
+## 6. Chapter Summary
 
-组件体系的总判断是：
+The overall assessment of the component system is:
 
-- `Messages` 和 `PromptInput` 构成会话工作台的双中枢。
-- 其余组件族大多是围绕权限、agent、MCP、任务、团队协作展开的能力控制面。
-- 组件设计很强调“上层编排、下层专职渲染”，并且针对终端长会话场景做了大量性能与交互细节优化。
+- `Messages` and `PromptInput` form the dual hubs of the session workspace.
+- Most other component families are capability control planes centered around permissions, agents, MCP, tasks, and team collaboration.
+- Component design emphasizes "upper-layer orchestration, lower-layer specialized rendering," and is heavily optimized for performance and interaction details in long terminal sessions.
 
-后续两章分别进入两条主线：
+The following two chapters dive into the two main lines:
 
-- 一条是“消息与输入”这条核心交互主线。
-- 一条是“权限、agent、MCP、任务、团队”等平台能力主线。
+- One is the core interaction line of "messages and input."
+- One is the platform capability line of "permissions, agents, MCP, tasks, teams," etc.

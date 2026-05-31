@@ -12,6 +12,28 @@ import type { Command } from './commands.js'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import type { ThinkingConfig } from './utils/thinking.js'
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// Tool.ts defines the Tool interface — the runtime protocol object that every
+// tool (built-in, MCP, or agent) must implement. This is NOT a simple function
+// mapping; it's a rich interface with:
+//
+// - Lifecycle hooks: call(), validateInput(), checkPermissions()
+// - Concurrency control: isConcurrencySafe(), isReadOnly(), isDestructive()
+// - UI rendering: renderToolUseMessage(), renderToolResultMessage()
+// - Permission system: checkPermissions(), preparePermissionMatcher()
+// - Search/discovery: shouldDefer, alwaysLoad, searchHint
+//
+// KEY DESIGN PRINCIPLE: buildTool() uses FAIL-CLOSED defaults:
+// - isConcurrencySafe → false (assume not safe, run serially)
+// - isReadOnly → false (assume writes, require permission)
+// - isDestructive → false (safe default)
+// - checkPermissions → defer to general permission system
+//
+// This means any new tool that forgets to declare its safety properties
+// will be treated as potentially dangerous — a deliberate security choice.
+// ============================================================================
+
 export type ToolInputJSONSchema = {
   [x: string]: unknown
   type: 'object'

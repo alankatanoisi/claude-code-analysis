@@ -1,150 +1,150 @@
-# 组件体系详解（二）：核心交互组件与消息/输入主链路
+# Component System Deep Dive (2): Core Interaction Components & Message/Input Main Chain
 
-[返回总目录](../../README.md)
+[Back to Table of Contents](../../README.md)
 
-[上一章：组件总览、分层与依赖主干](./01-component-architecture-overview.md)
+[Previous Chapter: Component Overview, Layering & Dependency Backbone](./01-component-architecture-overview.md)
 
-[下一章：平台能力组件](./03-platform-components.md)
+[Next Chapter: Platform Capability Components](./03-platform-components.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-本章聚焦最核心的用户交互主链路，也就是用户每次真正看到、滚动、输入和确认的那一条链：
+This chapter focuses on the most core user interaction main chain — the chain that users actually see, scroll, input, and confirm each time:
 
 `App -> Messages -> VirtualMessageList -> MessageRow -> Message -> messages/*`
 
-以及：
+And:
 
 `PromptInput -> footer / suggestions / dialogs / queued commands / history / typeahead`
 
-结论先行：这里不是“一个聊天面板 + 一个输入框”，而是“一个消息工作台 + 一个输入编排器”。
+TL;DR: This is not "a chat panel + an input box," but "a message workspace + an input orchestrator."
 
-## 2. App：根组件只做 Provider 装配
+## 2. App: Root Component Only Assembles Providers
 
-[`src/components/App.tsx`](../../src/components/App.tsx) 的设计非常克制。
+[`src/components/App.tsx`](../../src/components/App.tsx) is very restrained in its design.
 
-它主要做三件事：
+It mainly does three things:
 
-- 用 `AppStateProvider` 提供全局状态
-- 用 `StatsProvider` 提供统计
-- 用 `FpsMetricsProvider` 提供性能度量
+- Provides global state via `AppStateProvider`
+- Provides statistics via `StatsProvider`
+- Provides performance metrics via `FpsMetricsProvider`
 
-这意味着根组件本身不承担业务分发，业务编排被刻意下放到工作台组件，利于：
+This means the root component itself does not carry business distribution; business orchestration is intentionally pushed down to workspace components, which benefits:
 
-- 根节点稳定
-- 初始化与渲染边界清楚
-- 将同一套状态树复用到不同入口
+- Stable root node
+- Clear initialization and rendering boundaries
+- Reusing the same state tree for different entry points
 
-## 3. Messages：消息工作台的总编排器
+## 3. Messages: The Master Orchestrator of the Message Workspace
 
-主入口是 [`src/components/Messages.tsx`](../../src/components/Messages.tsx)。
+The main entry point is [`src/components/Messages.tsx`](../../src/components/Messages.tsx).
 
-### 3.1 它负责的不是单纯渲染，而是消息预处理
+### 3.1 It Is Not Responsible for Simple Rendering, But Message Preprocessing
 
-从导入与实现可以看出，`Messages` 在真正渲染前会完成多轮整理：
+From the imports and implementation, it is clear that `Messages` performs multiple rounds of processing before actual rendering:
 
-- 规范化消息
-- UI 重排
-- read/search 折叠
-- hook 摘要折叠
-- teammate shutdown 折叠
-- 后台 bash 通知折叠
-- grouped tool use 合并
-- brief 模式过滤
+- Normalizing messages
+- UI reordering
+- read/search collapsing
+- Hook summary collapsing
+- Teammate shutdown collapsing
+- Background bash notification collapsing
+- Grouped tool use merging
+- Brief mode filtering
 
-也就是说，`Messages` 既是渲染组件，也是 transcript 视图转换器。
+In other words, `Messages` is both a rendering component and a transcript view transformer.
 
-### 3.2 它维护的是多视图，而不是单一列表
+### 3.2 It Maintains Multiple Views, Not a Single List
 
-`Messages` 同时要适配：
+`Messages` must simultaneously adapt to:
 
-- fullscreen 模式
-- transcript 模式
-- brief-only 模式
-- 普通 prompt 屏
-- remote 模式下的特殊显示逻辑
+- fullscreen mode
+- transcript mode
+- brief-only mode
+- Normal prompt screen
+- Special display logic in remote mode
 
-因此它内部不能简单把 `messages[]` 直接传给子组件，而要先决定“当前用户应该看到什么消息集合”。
+Therefore, internally it cannot simply pass `messages[]` directly to child components, but must first decide "what set of messages the current user should see."
 
-### 3.3 它有明显的性能中心意识
+### 3.3 It Has Clear Performance Awareness
 
-`Messages` 中有几个关键性能点：
+There are several key performance points in `Messages`:
 
-- 前置的 `LogoHeader` 单独 memo，避免头部节点拖慢整屏 blit
-- 长列表时交给 [`src/components/VirtualMessageList.tsx`](../../src/components/VirtualMessageList.tsx)
-- 每行再交给 [`src/components/MessageRow.tsx`](../../src/components/MessageRow.tsx)
-- 离屏冻结通过 [`src/components/OffscreenFreeze.tsx`](../../src/components/OffscreenFreeze.tsx)
+- The `LogoHeader` is separately memoized to prevent header nodes from slowing down full-screen blits
+- Long lists are delegated to [`src/components/VirtualMessageList.tsx`](../../src/components/VirtualMessageList.tsx)
+- Each row is then delegated to [`src/components/MessageRow.tsx`](../../src/components/MessageRow.tsx)
+- Offscreen freezing is handled by [`src/components/OffscreenFreeze.tsx`](../../src/components/OffscreenFreeze.tsx)
 
-这说明作者将消息区视为全应用最重的渲染热点。
+This shows the author treats the message area as the heaviest rendering hot spot in the entire application.
 
-## 4. VirtualMessageList：长 transcript 的性能核心
+## 4. VirtualMessageList: The Performance Core for Long Transcripts
 
-[`src/components/VirtualMessageList.tsx`](../../src/components/VirtualMessageList.tsx) 是整个消息系统里技术含量最高的组件之一。
+[`src/components/VirtualMessageList.tsx`](../../src/components/VirtualMessageList.tsx) is one of the most technically sophisticated components in the entire message system.
 
-### 4.1 它解决的不是“滚动”，而是“可搜索的虚拟滚动”
+### 4.1 It Solves Not Just "Scrolling," But "Searchable Virtual Scrolling"
 
-这个组件同时承担：
+This component simultaneously handles:
 
-- 虚拟列表
-- 高度测量与缓存
-- transcript 搜索
-- 跳转到匹配项
-- sticky prompt 跟踪
-- 键盘滚动与程序化滚动的分离
+- Virtual list
+- Height measurement and caching
+- Transcript search
+- Jumping to matches
+- Sticky prompt tracking
+- Separation of keyboard scrolling and programmatic scrolling
 
-对应的对外句柄 `JumpHandle` 直接说明了这一点：它支持 `nextMatch`、`prevMatch`、`setAnchor`、`warmSearchIndex`、`disarmSearch`。
+The corresponding external handle `JumpHandle` directly illustrates this: it supports `nextMatch`, `prevMatch`, `setAnchor`, `warmSearchIndex`, `disarmSearch`.
 
-### 4.2 它有终端特有的设计
+### 4.2 It Has Terminal-Specific Design
 
-该组件不是浏览器虚拟列表的直接搬运，有几个明显终端化实现：
+This component is not a direct port of a browser virtual list; it has several clear terminal-specific implementations:
 
-- 需要测量消息在终端中的真实高度
-- 搜索命中位置依赖屏幕渲染后的行坐标
-- sticky prompt 需要根据滚动位置推断“哪个用户输入正停留在顶部”
-- 高度缓存必须与 `columns` 联动，否则终端换宽导致换行变化后会错位
+- Needs to measure the actual height of messages in the terminal
+- Search hit positions depend on screen-rendered line coordinates
+- Sticky prompt needs to infer "which user input is currently stuck at the top" based on scroll position
+- Height cache must be linked with `columns`, otherwise terminal width changes causing line wrapping changes will lead to misalignment
 
-### 4.3 它的子组件是 VirtualItem
+### 4.3 Its Child Component is VirtualItem
 
-`VirtualItem` 不是业务组件，而是一个稳定包装层。其目标是减少 per-item 闭包分配，降低长会话滚动时的 GC 压力。
+`VirtualItem` is not a business component, but a stable wrapper layer. Its goal is to reduce per-item closure allocation and lower GC pressure during long session scrolling.
 
-这体现了组件实现的一个典型特征：很多代码不是为了功能正确性，而是为了终端高频滚动下的稳定性能。
+This reflects a typical characteristic of the component implementation: much of the code is not for functional correctness, but for stable performance under high-frequency terminal scrolling.
 
-## 5. MessageRow：消息行级编排器
+## 5. MessageRow: Message Row-Level Orchestrator
 
-[`src/components/MessageRow.tsx`](../../src/components/MessageRow.tsx) 的职责是把“一个 renderable message”转成“一个可显示行单元”。
+[`src/components/MessageRow.tsx`](../../src/components/MessageRow.tsx) is responsible for turning "a renderable message" into "a displayable row unit."
 
-### 5.1 它负责推断消息的动态状态
+### 5.1 It Is Responsible for Inferring the Dynamic State of Messages
 
-例如：
+For example:
 
-- collapsed read/search 组是否仍然活跃
-- 当前消息是否应该静态渲染
-- 当前消息是否需要动画
-- 当前消息是否还有后续真实内容
+- Whether a collapsed read/search group is still active
+- Whether the current message should be statically rendered
+- Whether the current message needs animation
+- Whether the current message still has subsequent real content
 
-这里有个很重要的辅助函数：
+There is a very important helper function here:
 
 - `hasContentAfterIndex(...)`
 
-这个函数被单独导出，就是为了在 `Messages` 中一次性预计算，避免给每个 `MessageRow` 传整段历史数组。
+This function is exported separately precisely so that `Messages` can pre-compute it in one pass, avoiding passing the entire history array to each `MessageRow`.
 
-### 5.2 它是消息域与渲染域之间的适配器
+### 5.2 It Is the Adapter Between Message Domain and Rendering Domain
 
-`MessageRow` 同时知道：
+`MessageRow` simultaneously knows about:
 
-- message 分组/折叠后的形态
-- tool 是否进行中
-- lookups 中能否查到 sibling/progress/tool use id
-- 当前 screen 是 prompt 还是 transcript
+- The form of messages after grouping/collapsing
+- Whether a tool is in progress
+- Whether lookups can find sibling/progress/tool use IDs
+- Whether the current screen is prompt or transcript
 
-所以它本质上是“消息语义”和“显示语义”的交界层。
+So it is essentially the boundary layer between "message semantics" and "display semantics."
 
-## 6. Message：真正的消息类型分发器
+## 6. Message: The True Message Type Dispatcher
 
-[`src/components/Message.tsx`](../../src/components/Message.tsx) 负责把一条消息继续拆给最终的子组件。
+[`src/components/Message.tsx`](../../src/components/Message.tsx) is responsible for further splitting a message into final child components.
 
-### 6.1 分发方式
+### 6.1 Dispatch Method
 
-它根据消息类型把渲染下发给：
+It dispatches rendering based on message type to:
 
 - `AttachmentMessage`
 - `AssistantTextMessage`
@@ -156,13 +156,13 @@
 - `UserTextMessage`
 - `UserImageMessage`
 - `UserToolResultMessage`
-- 以及 compact、advisor、shell output 等特殊分支
+- And special branches like compact, advisor, shell output, etc.
 
-这层的价值是：上游只要把消息规整成统一结构，下游就能用固定组件树消费。
+The value of this layer is: as long as the upstream normalizes messages into a unified structure, the downstream can consume them with a fixed component tree.
 
-### 6.2 子组件拆得非常细
+### 6.2 Child Components Are Split Very Finely
 
-`src/components/messages/` 目录中的子组件已经覆盖了绝大多数消息亚型，例如：
+The child components in the `src/components/messages/` directory already cover the vast majority of message subtypes, for example:
 
 - `AssistantTextMessage`
 - `AssistantThinkingMessage`
@@ -176,50 +176,50 @@
 - `UserTeammateMessage`
 - `UserToolResultMessage/*`
 
-这个目录本质上是一个“消息样式协议层”。新增消息类型时，通常只需补一个 leaf component，而不用重写 `Messages` 总体结构。
+This directory is essentially a "message style protocol layer." When adding a new message type, you usually only need to add a leaf component, without rewriting the overall `Messages` structure.
 
-## 7. PromptInput：输入编排器，而不是单纯文本框
+## 7. PromptInput: Input Orchestrator, Not Just a Text Box
 
-[`src/components/PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx) 是另一条主线的核心。
+[`src/components/PromptInput/PromptInput.tsx`](../../src/components/PromptInput/PromptInput.tsx) is the core of the other main chain.
 
-### 7.1 它覆盖的职责极广
+### 7.1 It Covers an Extremely Wide Range of Responsibilities
 
-从 import 即可看出它同时吸收了以下能力：
+From the imports, it can be seen that it simultaneously incorporates the following capabilities:
 
-- 输入缓冲与文本编辑
-- arrow key history / history search
-- prompt suggestion / speculation / typeahead
-- slash command、thinking、token budget、ultraplan 等触发器识别
-- 图片粘贴与图片缓存
-- model 选择、fast mode、permission mode 切换
-- quick open、global search、bridge、teams、background tasks 等对话框
-- teammate 视角、overlay、notifications、queued commands
+- Input buffering and text editing
+- Arrow key history / history search
+- Prompt suggestion / speculation / typeahead
+- Trigger recognition for slash command, thinking, token budget, ultraplan, etc.
+- Image pasting and image caching
+- Model selection, fast mode, permission mode switching
+- Dialogs for quick open, global search, bridge, teams, background tasks
+- Teammate view, overlay, notifications, queued commands
 
-这说明 PromptInput 的本质不是 `TextInput`，而是一个会话控制台。
+This shows that the essence of PromptInput is not a `TextInput`, but a session console.
 
-### 7.2 它的子组件分工清楚
+### 7.2 Its Child Components Have Clear Division of Labor
 
-`src/components/PromptInput/` 目录下的子组件大体可以分成四类：
+The child components under `src/components/PromptInput/` can be roughly divided into four categories:
 
-第一类，结构组件：
+First category, structural components:
 
 - [`PromptInputFooter.tsx`](../../src/components/PromptInput/PromptInputFooter.tsx)
 - [`PromptInputFooterLeftSide.tsx`](../../src/components/PromptInput/PromptInputFooterLeftSide.tsx)
 - [`PromptInputModeIndicator.tsx`](../../src/components/PromptInput/PromptInputModeIndicator.tsx)
 
-第二类，建议与通知组件：
+Second category, suggestion and notification components:
 
 - [`PromptInputFooterSuggestions.tsx`](../../src/components/PromptInput/PromptInputFooterSuggestions.tsx)
 - [`Notifications.tsx`](../../src/components/PromptInput/Notifications.tsx)
 - [`IssueFlagBanner.tsx`](../../src/components/PromptInput/IssueFlagBanner.tsx)
 
-第三类，输入状态与队列组件：
+Third category, input state and queue components:
 
 - [`PromptInputQueuedCommands.tsx`](../../src/components/PromptInput/PromptInputQueuedCommands.tsx)
 - [`PromptInputStashNotice.tsx`](../../src/components/PromptInput/PromptInputStashNotice.tsx)
 - [`HistorySearchInput.tsx`](../../src/components/PromptInput/HistorySearchInput.tsx)
 
-第四类，行为 hooks 和工具函数：
+Fourth category, behavior hooks and utility functions:
 
 - [`useMaybeTruncateInput.ts`](../../src/components/PromptInput/useMaybeTruncateInput.ts)
 - [`usePromptInputPlaceholder.ts`](../../src/components/PromptInput/usePromptInputPlaceholder.ts)
@@ -228,52 +228,52 @@
 - [`inputModes.ts`](../../src/components/PromptInput/inputModes.ts)
 - [`inputPaste.ts`](../../src/components/PromptInput/inputPaste.ts)
 
-### 7.3 设计亮点
+### 7.3 Design Highlights
 
-PromptInput 的关键亮点不是“功能多”，而是它把互相冲突的输入行为统一了：
+The key highlight of PromptInput is not "many features," but how it unifies conflicting input behaviors:
 
-- 普通输入与 vim 输入并存
-- 输入编辑与 modal/overlay 的快捷键冲突能被屏蔽
-- 输入中的 suggestion 与外部 speculative prompt suggestion 共存
-- 用户输入既可以发往主会话，也可以发往队列中的 tool 交互或 teammate 通道
+- Normal input and vim input coexist
+- Keybinding conflicts between input editing and modal/overlay can be masked
+- Inline suggestions and external speculative prompt suggestion coexist
+- User input can be sent either to the main session or to a tool interaction in the queue or a teammate channel
 
-换句话说，它把“终端里所有可能发生的输入行为”尽量纳入同一个协调器。
+In other words, it brings "all possible input behaviors in the terminal" into a single coordinator as much as possible.
 
-## 8. GlobalKeybindingHandlers：跨组件的全局控制面
+## 8. GlobalKeybindingHandlers: Cross-Component Global Control Surface
 
-[`src/hooks/useGlobalKeybindings.tsx`](../../src/hooks/useGlobalKeybindings.tsx) 不是视觉组件，但它对组件行为的影响极大。
+[`src/hooks/useGlobalKeybindings.tsx`](../../src/hooks/useGlobalKeybindings.tsx) is not a visual component, but its impact on component behavior is significant.
 
-它统一注册了全局键位，例如：
+It registers global keybindings uniformly, for example:
 
-- transcript 开关
-- todo / teammate 面板切换
-- brief view 切换
-- terminal panel 切换
+- Transcript toggle
+- Todo / teammate panel toggle
+- Brief view toggle
+- Terminal panel toggle
 
-这意味着工作台不是由某个单独组件“拥有全部快捷键”，而是通过独立全局处理器把跨组件动作集中起来。
+This means the workspace is not "owned by a single component for all shortcuts," but centralizes cross-component actions through an independent global handler.
 
-## 9. 这一条主链路的结构评价
+## 9. Structural Assessment of This Main Chain
 
-从实现上看，消息链路与输入链路形成了一个很成熟的双向闭环：
+From the implementation, the message chain and input chain form a very mature bidirectional loop:
 
-1. 输入由 `PromptInput` 编排、提交。
-2. query / tool / task 执行结果变成消息。
-3. `Messages` 对消息做语义级重排与折叠。
-4. `VirtualMessageList`、`MessageRow`、`Message` 再把它们渲染成终端可消费形态。
+1. Input is orchestrated and submitted by `PromptInput`.
+2. Query / tool / task execution results become messages.
+3. `Messages` performs semantic-level reordering and collapsing of messages.
+4. `VirtualMessageList`, `MessageRow`, and `Message` then render them into terminal-consumable form.
 
-这套拆分优于很多同类 CLI agent 的地方在于：
+Where this decomposition surpasses many similar CLI agents is:
 
-- 消息层与输入层都不是一坨大文件直接画 UI
-- transcript 搜索、折叠、虚拟滚动、brief 过滤都被纳入正式架构
-- 工具调用、thinking、plan approval、team message 都被视为一等消息类型
+- Neither the message layer nor the input layer is a giant file that directly draws UI
+- Transcript search, collapsing, virtual scrolling, and brief filtering are all incorporated into formal architecture
+- Tool calls, thinking, plan approval, and team messages are all treated as first-class message types
 
-## 10. 本章小结
+## 10. Chapter Summary
 
-核心交互主线的判断是：
+The assessment of the core interaction main line is:
 
-- `Messages` 是 transcript 语义整理器加渲染总管。
-- `VirtualMessageList` 是长会话性能与搜索能力的核心。
-- `MessageRow` 与 `Message` 是消息语义到显示语义的两级适配层。
-- `PromptInput` 是输入编排器，而不是传统意义上的文本输入框。
+- `Messages` is the transcript semantic organizer plus rendering manager.
+- `VirtualMessageList` is the core of long session performance and search capability.
+- `MessageRow` and `Message` are the two-level adaptation layer from message semantics to display semantics.
+- `PromptInput` is the input orchestrator, not a traditional text input box.
 
-也正因为这条主线拆得够清楚，后面的权限、agent、MCP、团队等能力才能以面板/弹层形式稳定挂进来，而不会直接污染消息与输入的核心结构。
+It is precisely because this main chain is decomposed clearly enough that subsequent capabilities like permissions, agents, MCP, and teams can be stably attached as panels/overlays without directly polluting the core structure of messages and input.

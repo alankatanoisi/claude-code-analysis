@@ -1,3 +1,28 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the ANALYTICS SERVICE — Claude Code's telemetry system.
+//
+// PRIVACY DESIGN:
+// 1. TYPE BARRIER: AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+//    is a `never` type that forces developers to explicitly cast string values,
+//    confirming they don't contain code, file paths, or other sensitive data.
+// 2. MCP TOOL NAME SANITIZATION: MCP tool names (mcp__*__*) are replaced with
+//    generic "mcp_tool" in metadata.ts before logging.
+// 3. NO PERSISTENT USER ID: sessionId = randomUUID(), new on each process
+//    restart. No persistent device or user tracking.
+// 4. PRIVACY LEVELS: Three tiers controlled via env vars:
+//    - default: Full telemetry
+//    - no-telemetry: DISABLE_TELEMETRY=true
+//    - essential-traffic: CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=true
+// 5. PII-TAGGED PROTO: _PROTO_* keys are stripped before Datadog fanout.
+//    Only the 1P exporter (firstPartyEventLoggingExporter) sees them.
+//
+// EVENT PIPELINE:
+// logEvent() → eventQueue → attachAnalyticsSink() → sink.logEvent()
+// Events are queued until the sink is attached during app initialization.
+// Queue is drained asynchronously via queueMicrotask to avoid startup latency.
+// ============================================================================
+
 /**
  * Analytics service - public API for event logging
  *

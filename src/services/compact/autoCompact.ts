@@ -25,6 +25,33 @@ import {
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the AUTO-COMPACT system — Claude Code's automatic context window
+// management. When the conversation grows too long, it automatically
+// summarizes and compresses to stay within the model's context window.
+//
+// KEY DESIGN DECISIONS:
+// 1. CIRCUIT BREAKER: MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3. After 3
+//    consecutive failures, autocompact stops retrying. This prevents the
+//    death spiral observed in production: 1,279 sessions had 50+ consecutive
+//    failures (up to 3,272), wasting ~250K API calls/day globally.
+// 2. BUFFER TOKENS: 13,000 tokens reserved below the threshold. This gives
+//    enough headroom for the compaction summary itself without hitting the limit.
+// 3. TWO-PHASE RECOVERY: When autocompact fails, the system tries:
+//    a. Context collapse (cheaper, keeps granular context)
+//    b. Reactive compact (full summary, last resort)
+// 4. TOKEN ESTIMATION: Uses tokenCountWithEstimation() which reads usage from
+//    the last assistant message. Stale usage can cause false positives, so
+//    snip and microcompact results are subtracted to avoid blocking.
+//
+// THRESHOLD CALCULATION:
+// effectiveContextWindow = contextWindow - reservedTokensForSummary
+// autocompactThreshold = effectiveContextWindow - AUTOCOMPACT_BUFFER_TOKENS
+//
+// The 20,000 token summary reservation is based on p99.99 of compact output.
+// ============================================================================
+
 // Reserve this many tokens for output during compaction
 // Based on p99.99 of compact summary output being 17,387 tokens.
 const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000

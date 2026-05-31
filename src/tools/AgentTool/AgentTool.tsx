@@ -1,3 +1,38 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the AGENT TOOL — the unified entry point for ALL multi-agent
+// operations. It routes between three distinct execution modes:
+//
+// THREE MULTI-AGENT MODES:
+// 1. NORMAL SUBAGENT: Single dispatch, runs query() in a child context.
+//    - Sync: Blocks parent until complete
+//    - Background: Runs independently, parent continues
+//    - Fork: Inherits parent's full context + rendered system prompt
+//      (preserves prompt cache hit stability)
+//
+// 2. COORDINATOR MODE: Main thread becomes orchestrator.
+//    - System prompt rewrites identity ("You are a coordinator...")
+//    - Workers report via <task-notification> XML
+//    - Phased workflow: research → synthesis → implementation → verification
+//    - Workers cannot spawn other workers (enforced in code)
+//
+// 3. SWARM TEAMMATES: Team-based multi-agent with shared state.
+//    - Team file + task list + mailbox + permission bridging
+//    - In-process (AsyncLocalStorage isolation), tmux, or iTerm2 backends
+//    - File-based mailbox at .claude/teams/{team}/inboxes/{agent}.json
+//    - Leader permission bridge: teammates borrow leader's permission UI
+//
+// ROUTING LOGIC:
+// - team_name + name → spawnTeammate() (swarm mode)
+// - isCoordinatorMode() → runAgent() with coordinator system prompt
+// - Default → runAgent() with normal agent system prompt
+//
+// SECURITY:
+// - Agent permissions are inherited from parent with restrictions
+// - Teammates cannot spawn other teammates (prevents privilege escalation)
+// - Worktree isolation for concurrent file edits
+// ============================================================================
+
 import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { buildTool, type ToolDef, toolMatchesName } from 'src/Tool.js';

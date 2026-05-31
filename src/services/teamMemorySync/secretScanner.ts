@@ -17,6 +17,27 @@
  *   - Trailing boundary alternations like (?:[\x60'"\s;]|\\[nr]|$) from
  *     Go regex are kept (JS $ matches end-of-string in default mode).
  */
+// ============================================================================
+// SECURITY ANALYSIS (from source analysis):
+// This scanner is a CRITICAL privacy boundary for team memory sync.
+// It ensures secrets NEVER leave the user's machine, even accidentally.
+//
+// Design decisions:
+// 1. CLIENT-SIDE ONLY: Scanning happens locally before any upload. The server
+//    never sees raw secrets — only redacted content.
+// 2. REDACT, DON'T REJECT: When secrets are found, they're replaced with
+//    [REDACTED] rather than blocking the entire operation. This is user-friendly
+//    and prevents data loss while still protecting credentials.
+// 3. HIGH-CONFIDENCE RULES ONLY: Only patterns with distinctive prefixes (e.g.,
+//    ghp_ for GitHub PATs, sk-ant- for Anthropic keys) are included. Generic
+//    keyword-context rules are excluded to minimize false positives.
+// 4. LAZY COMPILATION: Regexes are compiled once on first scan, not at import
+//    time. This avoids startup cost for users who don't use team memory.
+//
+// The Anthropic API key prefix is assembled at runtime via join() so the
+// literal byte sequence isn't present in the external bundle (excluded-strings
+// check). This prevents the scanner itself from being used to extract keys.
+// ============================================================================
 
 import { capitalize } from '../../utils/stringUtils.js'
 

@@ -1,3 +1,36 @@
+// ============================================================================
+// SECURITY ANALYSIS (from source analysis):
+// This is the SANDBOX ADAPTER — the system-level isolation layer that
+// prevents Claude Code from escaping its intended filesystem/network scope.
+//
+// TWO SANDBOX IMPLEMENTATIONS:
+// 1. bwrap (Bubblewrap) on Linux: Container-based isolation
+// 2. Native sandbox on macOS: Uses macOS sandbox-exec
+//
+// DUAL PERMISSION GATES:
+// Claude Code has TWO layers of permission control:
+// 1. APPLICATION-LAYER: permissionSetup.ts, toolHooks.ts — canUseTool()
+//    decides whether to ask the user, auto-allow, or auto-deny.
+// 2. SYSTEM-LEVEL: This sandbox — enforces filesystem/network restrictions
+//    at the OS level, regardless of application-layer decisions.
+//
+// KEY SECURITY FEATURES:
+// - Git bare repo escape prevention: scrubBareGitRepoFiles() runs after
+//   every sandbox command to prevent Git hook-based escapes
+// - Settings file protection: Settings files + .claude/skills forced to
+//   denyWrite in sandbox (prevents self-modification)
+// - Whitelist-driven: Filesystem/network access is explicitly allowed,
+//   everything else is denied by default
+// - Hot-reload: Settings changes are picked up via settingsChangeDetector
+//   without restarting the sandbox
+//
+// WHY THIS MATTERS:
+// The application layer can be bypassed (e.g., via prompt injection that
+// convinces the model to call Bash with dangerouslyDisableSandbox). The
+// sandbox is the last line of defense — even if the application layer
+// is compromised, the sandbox prevents actual damage.
+// ============================================================================
+
 /**
  * Adapter layer that wraps @anthropic-ai/sandbox-runtime with Claude CLI-specific integrations.
  * This file provides the bridge between the external sandbox-runtime package and Claude CLI's

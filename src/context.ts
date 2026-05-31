@@ -1,3 +1,29 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the CONTEXT ASSEMBLY module — builds the user/system context
+// injected into every API call. It provides two context types:
+//
+// USER CONTEXT (getUserContext):
+// - CLAUDE.md files (tiered trust: Managed > User > Project > Local)
+// - Current date
+// - @include depth limit=5 (DoS mitigation)
+// - Symlink deduplication to prevent infinite loops
+//
+// SYSTEM CONTEXT (getSystemContext):
+// - Git status (branch, main branch, recent commits, user)
+// - Cache breaker (changes each session to invalidate prompt cache)
+//
+// CACHING: Both functions are memoized per session. Context is computed
+// once at session start and reused across turns. The cache is cleared
+// when systemPromptInjection changes (ant-only debugging feature).
+//
+// CLAUDE.MD TIERED TRUST (from claudemd.ts):
+// 1. Managed: Enterprise-managed settings (highest priority)
+// 2. User: ~/.claude/CLAUDE.md (user preferences)
+// 3. Project: .claude/CLAUDE.md (project conventions)
+// 4. Local: .claude/CLAUDE.local.md (personal overrides, gitignored)
+// ============================================================================
+
 import { feature } from 'bun:bundle'
 import memoize from 'lodash-es/memoize.js'
 import {

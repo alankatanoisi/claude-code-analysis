@@ -1,80 +1,80 @@
-# 第二章：从用户角度看，项目收集了哪些信息，以及如何使用
+# Chapter 2: From the User's Perspective — What Information Is Collected and How It Is Used
 
-[返回总目录](../README.md)
+[Back to Table of Contents](../README.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-本章只站在用户视角，不站在开发者视角，回答两个问题：
+This chapter stands only from the user's perspective, not the developer's perspective, answering two questions:
 
-1. 系统实际会接触哪些用户信息。
-2. 这些信息分别被拿去做什么。
+1. What user information does the system actually touch.
+2. What each type of information is used for.
 
-结论先行：最值得警惕的并不只是 telemetry，而是“会进入模型上下文的源码与工作信息”以及“长期持久化的 transcript/memory”。
+**TL;DR**: What deserves the most attention is not just telemetry, but "the source code and work information that enters the model context" and "the long-term persisted transcript/memory".
 
-## 2. 进入模型 API 的信息
+## 2. Information Entering the Model API
 
-相关实现：
+Related implementations:
 
 - [`src/services/api/claude.ts`](../src/services/api/claude.ts)
 - [`src/context.ts`](../src/context.ts)
 - [`src/utils/queryContext.ts`](../src/utils/queryContext.ts)
 - [`src/utils/attachments.ts`](../src/utils/attachments.ts)
 
-会进入模型上下文的内容包括：
+Content that enters the model context includes:
 
-- 用户输入
-- 历史对话
-- 工具执行结果
-- 文件片段、代码片段、命令输出
-- `CLAUDE.md` 与 memory 文件
-- Git 状态快照
-- 图片、文档等附件
-- MCP 资源返回内容
-- 计划、任务、诊断信息
+- User input
+- Conversation history
+- Tool execution results
+- File snippets, code snippets, command output
+- `CLAUDE.md` and memory files
+- Git status snapshot
+- Images, documents and other attachments
+- MCP resource return content
+- Plans, tasks, diagnostic information
 
-这些信息的用途是：
+The purpose of this information is:
 
-- 生成回答
-- 决策下一步是否调用工具
-- 指导编辑代码
-- 做 compact 和摘要
-- 派生 subagent 的上下文
+- Generate responses
+- Decide whether to call tools next
+- Guide code editing
+- Perform compaction and summarization
+- Derive subagent context
 
-从敏感性排序看，这部分风险通常高于普通 analytics。
+In terms of sensitivity ranking, this part typically has higher risk than ordinary analytics.
 
-## 3. 本地持久化的信息
+## 3. Locally Persisted Information
 
-相关实现：
+Related implementations:
 
 - [`src/utils/sessionStorage.ts`](../src/utils/sessionStorage.ts)
 - [`src/utils/settings/types.ts`](../src/utils/settings/types.ts)
 
-本地默认会保存：
+The following is saved locally by default:
 
 - transcript JSONL
 - session metadata
 - agent transcript
 - subagent metadata
-- 本地用户配置、项目配置
-- OAuth 账户缓存信息
-- memory 文件
+- Local user config, project config
+- OAuth account cached information
+- memory files
 
-具体用途：
+Specific uses:
 
-- `--resume` 恢复会话
-- 会话搜索、标题、标签
-- compact 后恢复上下文连续性
-- 提供 memory 提取原料
-- 让子 agent 状态可追溯
+- `--resume` to resume sessions
+- Session search, title, tags
+- Restore context continuity after compaction
+- Provide raw material for memory extraction
+- Make subagent states traceable
 
-特别值得注意：
+Noteworthy:
 
-- `cleanupPeriodDays` 默认保留 transcript
-- 设置为 `0` 表示不保留 transcript，并清理已有 transcript
+- `cleanupPeriodDays` retains transcripts by default
+- Setting to `0` means do not retain transcripts, and clean up existing transcripts
 
-## 4. Memory 相关信息
+## 4. Memory-Related Information
 
-相关实现：
+Related implementations:
 
 - [`src/memdir/memdir.ts`](../src/memdir/memdir.ts)
 - [`src/memdir/paths.ts`](../src/memdir/paths.ts)
@@ -82,29 +82,29 @@
 - [`src/services/SessionMemory/sessionMemory.ts`](../src/services/SessionMemory/sessionMemory.ts)
 - [`src/tools/AgentTool/agentMemory.ts`](../src/tools/AgentTool/agentMemory.ts)
 
-系统会沉淀的 memory 类型包括：
+Types of memory the system accumulates include:
 
-- 用户偏好
-- 用户角色和背景
-- 项目事实
-- 参考信息
-- 当前会话摘要
-- agent 角色记忆
-- team 共享记忆
+- User preferences
+- User role and background
+- Project facts
+- Reference information
+- Current session summary
+- Agent role memory
+- Team shared memory
 
-这些信息会被用于：
+This information is used for:
 
-- 后续 prompt 注入
-- 相关 memory 检索
-- compact 后补偿长历史
-- agent 长期行为一致性
-- 团队共享项目知识
+- Subsequent prompt injection
+- Related memory retrieval
+- Compensating long history after compaction
+- Agent long-term behavioral consistency
+- Team shared project knowledge
 
-从用户角度，这等于系统在持续形成“长期协作画像”。
+From the user's perspective, this means the system is continuously forming a "long-term collaboration profile".
 
-## 5. Analytics / Telemetry 收集的信息
+## 5. Analytics / Telemetry Collected Information
 
-相关实现：
+Related implementations:
 
 - [`src/services/analytics/index.ts`](../src/services/analytics/index.ts)
 - [`src/services/analytics/config.ts`](../src/services/analytics/config.ts)
@@ -114,138 +114,138 @@
 - [`src/utils/user.ts`](../src/utils/user.ts)
 - [`src/utils/fileOperationAnalytics.ts`](../src/utils/fileOperationAnalytics.ts)
 
-源码显示项目在努力避免把“代码正文、文件路径原文”直接打进通用 analytics，但仍会采集较多元数据：
+The source code shows the project is making an effort to avoid sending "code body, original file paths" directly into general analytics, but still collects a fair amount of metadata:
 
 - `deviceId`
 - `sessionId`
 - app version
-- platform / arch / runtime / terminal / CI 环境
+- platform / arch / runtime / terminal / CI environment
 - account UUID / organization UUID
 - subscriptionType / rateLimitTier
 - repo remote hash
-- GitHub Actions 元数据
-- 工具使用事件、错误事件、compact 事件、bridge 事件、memory 事件
-- 文件路径 hash 和内容 hash
+- GitHub Actions metadata
+- Tool usage events, error events, compact events, bridge events, memory events
+- File path hash and content hash
 
-主要用途：
+Main uses:
 
-- 产品行为分析
-- 稳定性与错误监控
-- feature gate / 实验分流
-- 使用规模统计
-- 内部问题诊断
+- Product behavior analysis
+- Stability and error monitoring
+- Feature gate / experiment routing
+- Usage scale statistics
+- Internal issue diagnosis
 
-这里要区分：
+The distinction here:
 
-- 这不等于把用户源码全文上报到 Datadog
-- 但确实会形成相当完整的行为元数据画像
+- This does NOT mean uploading full user source code to Datadog
+- But it does form a fairly complete behavioral metadata profile
 
-## 6. 账户与身份信息
+## 6. Account and Identity Information
 
-相关实现：
+Related implementations:
 
 - [`src/utils/user.ts`](../src/utils/user.ts)
 - [`src/utils/config.ts`](../src/utils/config.ts)
 - [`src/services/oauth`](../src/services/oauth)
 - [`src/services/mcp/auth.ts`](../src/services/mcp/auth.ts)
 
-项目会读取或缓存：
+The project reads or caches:
 
 - OAuth token
 - accountUuid
 - organizationUuid
 - emailAddress
 - organizationName / role
-- 套餐、额度与资格信息
+- Plan, quota and entitlement information
 
-用途包括：
+Uses include:
 
-- 登录鉴权
-- 套餐与配额判断
-- Grove、team memory、remote control 等资格校验
-- analytics 维度标记
+- Login authentication
+- Plan and quota determination
+- Grove, team memory, remote control entitlement verification
+- Analytics dimension tagging
 
-## 7. Team Memory 同步会接触的信息
+## 7. Information Touched by Team Memory Sync
 
-相关实现：
+Related implementations:
 
 - [`src/services/teamMemorySync/index.ts`](../src/services/teamMemorySync/index.ts)
 - [`src/services/teamMemorySync/watcher.ts`](../src/services/teamMemorySync/watcher.ts)
 - [`src/memdir/teamMemPaths.ts`](../src/memdir/teamMemPaths.ts)
 
-当 team memory 开启且用户满足 OAuth 条件时，系统会：
+When team memory is enabled and the user meets OAuth conditions, the system will:
 
-- 按 repo 识别 team memory 空间
-- pull 远端 team memory 到本地
-- watch 本地目录
-- push 本地变更回服务器
+- Identify team memory namespace by repo
+- Pull remote team memory to local
+- Watch local directory
+- Push local changes back to server
 
-上传的不是整个仓库，而是 team memory 目录内的内容。但这些内容可能本身就包含：
+What is uploaded is not the entire repository, but the content within the team memory directory. However, this content may itself contain:
 
-- 项目流程
-- 内网知识
-- 运维路径
-- 团队约束
-- 特殊规章
+- Project workflows
+- Internal network knowledge
+- Operations paths
+- Team constraints
+- Special regulations
 
-虽然项目加了：
+Although the project has added:
 
-- path traversal 防护
-- secret scanner
+- Path traversal protection
+- Secret scanner
 
-但其本质依然是“组织级知识同步”。
+Its essence remains "organization-level knowledge synchronization".
 
-## 8. 用户主动触发的附加上传
+## 8. User-Initiated Additional Uploads
 
-### 8.1 Transcript 分享
+### 8.1 Transcript Sharing
 
-相关实现：
+Related implementations:
 
 - [`src/components/FeedbackSurvey/submitTranscriptShare.ts`](../src/components/FeedbackSurvey/submitTranscriptShare.ts)
 
-在反馈场景中，用户可能主动上传：
+In feedback scenarios, users may actively upload:
 
 - transcript
 - subagent transcripts
 - raw JSONL transcript
 
-代码会做脱敏，但这仍属于“会话内容上传”。
+The code performs sanitization, but this still constitutes "session content upload".
 
-### 8.2 Grove / Help improve Claude
+### 8.2 Grove / Help Improve Claude
 
-相关实现：
+Related implementations:
 
 - [`src/services/api/grove.ts`](../src/services/api/grove.ts)
 - [`src/components/grove/Grove.tsx`](../src/components/grove/Grove.tsx)
 
-这部分面向用户的含义非常直接：
+The meaning of this feature from the user's perspective is very straightforward:
 
-- 允许使用 chats 和 coding sessions 来训练或改进模型
+- Allow using chats and coding sessions to train or improve the model
 
-因此如果用户不希望自己的编码会话进入训练改进流程，就不应开启这项能力。
+Therefore, if the user does not wish their coding sessions to enter the training improvement pipeline, this capability should not be enabled.
 
-## 9. Remote / Bridge 场景下的信息
+## 9. Information in Remote / Bridge Scenarios
 
-相关实现：
+Related implementations:
 
 - [`src/bridge/bridgeMain.ts`](../src/bridge/bridgeMain.ts)
 - [`src/services/api/sessionIngress.ts`](../src/services/api/sessionIngress.ts)
 
-在远程或 bridge 场景下，系统还会涉及：
+In remote or bridge scenarios, the system also involves:
 
-- 远程环境标识
-- session ingress 日志
-- 远程会话元数据
-- 桥接状态、心跳与 session ID
+- Remote environment identifier
+- Session ingress logs
+- Remote session metadata
+- Bridge state, heartbeat and session ID
 
-这不是普通本地模式的默认数据面，但一旦启用，会显著扩大信息流范围。
+This is not the default data plane for normal local mode, but once enabled, it significantly expands the scope of information flow.
 
-## 10. 本章小结
+## 10. Chapter Summary
 
-从用户视角，本项目接触信息大致可分三层：
+From the user's perspective, the information touched by this project can be roughly divided into three layers:
 
-1. 进入模型的工作上下文
-2. 本地落盘的 transcript 与 memory
-3. 遥测、同步、分享、远程等附加上传
+1. Work context entering the model
+2. Locally persisted transcript and memory
+3. Telemetry, sync, sharing, remote and other additional uploads
 
-其中最关键的不是某一个日志事件，而是这些能力叠加后形成的“长期、可恢复、可检索、可同步”的用户工作画像。
+The most critical factor is not any single log event, but the "long-term, recoverable, searchable, syncable" user work profile formed by the combination of these capabilities.

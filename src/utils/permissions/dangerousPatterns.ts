@@ -1,3 +1,29 @@
+// ============================================================================
+// SECURITY ANALYSIS (from source analysis):
+// This is the DANGEROUS BASH PATTERNS list — a critical security boundary
+// that prevents the model from bypassing the auto-mode classifier.
+//
+// THE ATTACK VECTOR:
+// An allow rule like `Bash(python:*)` lets the model run arbitrary Python
+// code. The auto-mode classifier (which approves/denies bash commands)
+// can't evaluate what arbitrary code would do. So these patterns are
+// STRIPPED at auto-mode entry via isDangerousBashPermission().
+//
+// WHY THIS MATTERS:
+// Without this stripping, a malicious prompt injection could convince
+// the model to use a pre-approved `Bash(node:*)` rule to execute
+// arbitrary JavaScript, completely bypassing the security classifier.
+//
+// CROSS-PLATFORM COVERAGE:
+// The CROSS_PLATFORM_CODE_EXEC list is shared between Bash and PowerShell
+// to prevent drift. These are interpreters present on both Unix and Windows.
+//
+// ANT-ONLY PATTERNS:
+// Internal Anthropic tools (fa run, coo, gh, curl, git, kubectl, aws, etc.)
+// are only stripped for internal users. External users don't have access to
+// these tools, so stripping them would be unnecessary noise.
+// ============================================================================
+
 /**
  * Pattern lists for dangerous shell-tool allow-rule prefixes.
  *

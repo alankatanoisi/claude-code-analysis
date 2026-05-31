@@ -125,6 +125,37 @@ const MAX_TOMBSTONE_REWRITE_BYTES = 50 * 1024 * 1024
 const SKIP_FIRST_PROMPT_PATTERN =
   /^(?:\s*<[a-z][\w-]*[\s>]|\[Request interrupted by user[^\]]*\])/
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the SESSION STORAGE system — Claude Code's persistence layer.
+// It implements an APPEND-ONLY JSONL event stream for conversation history.
+//
+// KEY DESIGN DECISIONS:
+// 1. APPEND-ONLY: Never modify written entries. New entries are appended.
+//    This prevents corruption from concurrent writes and enables recovery.
+// 2. BATCH FLUSH: Writes are batched via drainWriteQueue() with 100ms lazy
+//    jsonStringify. This amortizes I/O cost across rapid message sequences.
+// 3. TRANSCRIPT MESSAGE TYPES: Only user/assistant/attachment/system messages
+//    are transcript messages. Progress messages are EPHEMERAL UI state and
+//    must NOT be persisted (caused chain forks on resume — #14373, #23537).
+// 4. PARENT UUID CHAIN: Messages form a linked list via parentUuid. This
+//    enables resume: walk the chain from the tail to reconstruct conversation
+//    state. Progress messages don't participate in this chain.
+// 5. FILE/DIR PERMISSIONS: 0o600 for files, 0o700 for directories. Only
+//    the owning user can read/write session data.
+// 6. METADATA RE-APPENDED: Session metadata is written at the tail for
+//    progressive loading — the lite reader (sessionStoragePortable.ts)
+//    reads only 64KB head+tail for session list display.
+//
+// RESUME PIPELINE (conversationRecovery.ts):
+// JSONL → chain repair → compact boundary handling → parallel tool result
+// recovery → consistency audit → skill state restore → session start hooks
+//
+// REMOTE SESSION INGRESS (sessionIngress.ts):
+// Incremental append chain with Last-UUID optimistic concurrency.
+// Sequential per-session ordering prevents race conditions.
+// ============================================================================
+
 /**
  * Type guard to check if an entry is a transcript message.
  * Transcript messages include user, assistant, attachment, and system messages.

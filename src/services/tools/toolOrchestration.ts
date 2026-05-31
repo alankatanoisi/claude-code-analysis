@@ -1,3 +1,33 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the TOOL SCHEDULING CORE — determines how tool calls are batched
+// and executed. The key insight: tools are partitioned into batches where
+// each batch is EITHER:
+//   1. A single non-concurrent tool (runs serially), OR
+//   2. Multiple consecutive concurrent-safe tools (runs in parallel)
+//
+// PARTITIONING ALGORITHM:
+// partitionToolCalls() groups consecutive tool_use blocks by their
+// isConcurrencySafe() property. Adjacent safe tools merge into one batch;
+// any unsafe tool starts a new batch.
+//
+// CONCURRENCY CONTROL:
+// - Concurrent-safe tools: Run via runToolsConcurrently() with all() generator
+//   combinator. Max concurrency: CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY (default 10).
+// - Non-concurrent tools: Run via runToolsSerially(), one at a time.
+//
+// CONTEXT MODIFIER PATTERN:
+// Tools can return contextModifier functions that update the ToolUseContext
+// for subsequent tools. For concurrent batches, context modifiers are
+// DEFERRED and applied atomically after all tools complete — this prevents
+// race conditions where concurrent tools see inconsistent context state.
+//
+// WHY THIS MATTERS:
+// Read-only tools (Glob, Grep, Read) are concurrency-safe and can run in
+// parallel, dramatically speeding up multi-file operations. Write tools
+// (Edit, Write, Bash) are serial, ensuring safety.
+// ============================================================================
+
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type ToolUseContext } from '../../Tool.js'

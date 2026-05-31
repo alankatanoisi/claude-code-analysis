@@ -21,6 +21,23 @@
  *
  * The sanitization is always enabled to protect against these attacks.
  */
+// ============================================================================
+// SECURITY ANALYSIS (from source analysis):
+// This is a critical defense layer against prompt injection via Unicode.
+// The attack vector: invisible characters (Tag characters U+E0000-U+E007F,
+// format controls U+200B-U+200F, private use areas) can hide malicious
+// instructions that models process but humans cannot see.
+//
+// Defense layers:
+// 1. NFKC normalization: collapses composed sequences (e.g., fullwidth chars)
+// 2. Unicode category stripping: removes Cf (format), Co (private use), Cn (unassigned)
+// 3. Explicit range fallback: covers environments where \p{} regex isn't supported
+// 4. Iterative application: handles nested/compound obfuscation (max 10 iterations)
+//
+// The 10-iteration limit prevents infinite loops from adversarial inputs while
+// allowing sufficient passes to strip deeply nested obfuscation. If hit, it
+// throws loudly — this should never happen in legitimate use.
+// ============================================================================
 
 export function partiallySanitizeUnicode(prompt: string): string {
   let current = prompt

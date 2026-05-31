@@ -1,3 +1,40 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the SKILL DISCOVERY system — how Claude Code finds and loads
+// skills from multiple sources. Skills are the extensibility mechanism
+// that lets users add custom commands and behaviors.
+//
+// SKILL SOURCES (in priority order):
+// 1. Policy/managed: Enterprise-managed skills (highest priority)
+// 2. User: ~/.claude/skills/ (user-installed skills)
+// 3. Project: .claude/skills/ (project-specific skills)
+// 4. Plugin: Plugin-installed skills
+// 5. MCP: Skills from MCP servers
+// 6. Bundled: Built-in skills shipped with Claude Code
+//
+// SKILL DISCOVERY:
+// - Memoized to prevent redundant filesystem scans
+// - Parallel Promise.all across all source directories
+// - Deduplication via fs.realpath (prevents symlink loops)
+// - Gitignore-aware: respects .gitignore for project skills
+//
+// SKILL FORMAT (SKILL.md with frontmatter):
+// ---
+// name: skill-name
+// description: What this skill does
+// paths: ["src/**/*.ts"]  # Conditional trigger patterns
+// model: claude-sonnet-4-6  # Optional model override
+// effort: high  # Optional effort level
+// shell: bash  # Optional shell for execution
+// ---
+// <skill content in markdown>
+//
+// SECURITY:
+// - MCP skills skip shell execution (prevents injection)
+// - paths triggers are glob patterns, not shell commands
+// - Shell execution in prompts uses hasPermissionsToUseTool()
+// ============================================================================
+
 import { realpath } from 'fs/promises'
 import ignore from 'ignore'
 import memoize from 'lodash-es/memoize.js'

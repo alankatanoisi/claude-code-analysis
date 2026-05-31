@@ -1,3 +1,36 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the COMPACTION SYSTEM — Claude Code's conversation compression.
+// When context grows too large, it summarizes and compresses to stay within
+// the model's context window while preserving critical information.
+//
+// COMPACTION PIPELINE:
+// 1. Pre-compact hooks: executePreCompactHooks() for cleanup/notification
+// 2. Image stripping: stripImagesFromMessages() removes non-essential images
+// 3. Attachment stripping: stripReinjectedAttachments() removes duplicates
+// 4. Summary generation: Forked agent summarizes the conversation
+// 5. State re-injection: File attachments, Plans, tool declarations restored
+// 6. Post-compact hooks: executePostCompactCleanup() for refresh
+//
+// TWO COMPACTION MODES:
+// 1. AUTO-COMPACT: Triggered when token count exceeds threshold
+//    - Uses circuit breaker (MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3)
+//    - Buffer tokens (13,000) reserved for summary generation
+// 2. REACTIVE COMPACT: Triggered by API 413 (prompt-too-long) error
+//    - Last resort before surfacing error to user
+//    - Strips images more aggressively
+//
+// PROMPT CACHE SHARING:
+// Main and forked agents share prompt cache via renderedSystemPrompt.
+// This prevents cache busting when forking (GrowthBook cold→warm can
+// change the prompt between calls).
+//
+// SESSION MEMORY COMPACT:
+// Session memory summaries are used as context breakpoints — the summary
+// replaces the full conversation history, with tool_use/tool_result chains
+// preserved via calculateMessagesToKeepIndex().
+// ============================================================================
+
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'

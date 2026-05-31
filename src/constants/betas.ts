@@ -1,3 +1,28 @@
+// ============================================================================
+// EASTER EGG (from source analysis):
+// This file contains BETA HEADERS — API feature flags that enable
+// unreleased capabilities. These are sent as HTTP headers to the
+// Claude API and enable experimental features.
+//
+// NOTABLE BETA FEATURES:
+// - context-1m: Enables 1M token context window
+// - interleaved-thinking: Enables thinking blocks during tool execution
+// - tool-search: Enables deferred tool loading (saves prompt tokens)
+// - afk-mode: Enables autonomous agent mode (auto-approve)
+// - fast-mode: Enables faster, cheaper model responses
+// - token-efficient-tools: Reduces tool token overhead
+// - task-budgets: Enables per-turn token budget limits
+// - advisor-tool: Enables model-to-model advisory system
+//
+// PROVIDER-SPECIFIC:
+// - Bedrock: Limited beta support via extraBodyParams (not headers)
+// - Vertex: Limited beta support, some restricted to countTokens API
+// - Claude API / Foundry: Full beta support via headers
+//
+// INTERNAL-ONLY:
+// cli-internal-2026-02-09: Only sent for USER_TYPE='ant' (Anthropic internal)
+// ============================================================================
+
 import { feature } from 'bun:bundle'
 
 export const CLAUDE_CODE_20250219_BETA_HEADER = 'claude-code-20250219'

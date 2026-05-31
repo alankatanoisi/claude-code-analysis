@@ -1,45 +1,45 @@
-# 组件体系详解（三）：平台能力组件与控制面实现
+# Component System Deep Dive (3): Platform Capability Components & Control Plane Implementation
 
-[返回总目录](../../README.md)
+[Back to Table of Contents](../../README.md)
 
-[上一章：核心交互组件](./02-core-interaction-components.md)
+[Previous Chapter: Core Interaction Components](./02-core-interaction-components.md)
 
-[下一章：组件索引](./04-component-index.md)
+[Next Chapter: Component Index](./04-component-index.md)
 
-## 1. 本章导读
+## 1. Chapter Guide
 
-如果说上一章分析的是“会话主干”，这一章分析的就是这套 agent 平台暴露给用户的能力控制面。
+If the previous chapter analyzed the "session backbone," this chapter analyzes the capability control plane that this agent platform exposes to the user.
 
-核心结论是：这个项目的多数复杂组件，并不在消息展示层，而在“权限、agent、任务、MCP、团队、设置、memory、skills、hooks、sandbox”这些面板里。它们一起把执行内核包装成了可操控的平台。
+The core conclusion is: most of the complex components in this project are not in the message display layer, but in the "permissions, agents, tasks, MCP, teams, Settings, memory, skills, hooks, sandbox" panels. Together, they wrap the execution kernel into a controllable platform.
 
-先给出平台控制面总图：
+Here is the overall platform control plane diagram:
 
 ```text
 PromptInput / slash command / footer
-  ├─> permissions
-  ├─> tasks
-  ├─> agents
-  ├─> mcp
-  ├─> teams
-  ├─> Settings
-  └─> memory / skills / hooks / sandbox
+ ├─> permissions
+ ├─> tasks
+ ├─> agents
+ ├─> mcp
+ ├─> teams
+ ├─> Settings
+ └─> memory / skills / hooks / sandbox
 
-上述控制面统一向下依赖：
-  -> AppState / Context / hooks
-  -> services / tools / swarm / mcp / permissions / fs
+The above control planes uniformly depend downward on:
+ -> AppState / Context / hooks
+ -> services / tools / swarm / mcp / permissions / fs
 ```
 
-## 2. permissions：权限组件族是最重的控制面
+## 2. permissions: The Permission Component Family Is the Heaviest Control Plane
 
-权限组件在 [`src/components/permissions`](../../src/components/permissions) 下，文件量是整个组件目录里最多的一组。
+Permission components live under [`src/components/permissions`](../../src/components/permissions), with the largest file count in the entire component directory.
 
-### 2.1 总入口
+### 2.1 Main Entry Point
 
-总入口是 [`src/components/permissions/PermissionRequest.tsx`](../../src/components/permissions/PermissionRequest.tsx)。
+The main entry point is [`src/components/permissions/PermissionRequest.tsx`](../../src/components/permissions/PermissionRequest.tsx).
 
-这个组件的实现方式很直接：根据工具类型，把审批渲染分发给对应子组件。
+This component's implementation is straightforward: it dispatches approval rendering to corresponding sub-components based on the tool type.
 
-它能分发到的子组件包括：
+The sub-components it can dispatch to include:
 
 - `FileEditPermissionRequest`
 - `FileWritePermissionRequest`
@@ -50,38 +50,38 @@ PromptInput / slash command / footer
 - `SkillPermissionRequest`
 - `AskUserQuestionPermissionRequest`
 - `FilesystemPermissionRequest`
-- plan mode enter/exit 对应的 permission request
+- Permission requests corresponding to plan mode enter/exit
 
-### 2.2 设计特点
+### 2.2 Design Features
 
-这一层的亮点在于：
+The highlight of this layer is:
 
-- 权限逻辑不是写死在工具里，而是由权限组件族承接最终交互
-- 同一个 `ToolUseConfirm` 协议可以被多个子组件消费
-- sticky footer、reject/allow、用户交互检测、classifier auto-approve 等都被纳入统一接口
+- Permission logic is not hardcoded in tools, but handled by the permission component family for final interaction
+- The same `ToolUseConfirm` protocol can be consumed by multiple sub-components
+- Sticky footer, reject/allow, user interaction detection, classifier auto-approve, etc. are all incorporated into a unified interface
 
-这使 permission mode 真正成为系统级机制，而不是“弹个确认框”。
+This makes permission mode truly a system-level mechanism, not just "showing a confirmation dialog."
 
-### 2.3 子组件结构
+### 2.3 Sub-component Structure
 
-该目录下还有几类重要子组件：
+This directory also contains several important types of sub-components:
 
-- 文件相关 UI：`FilePermissionDialog/*`
-- 规则相关 UI：`permissions/rules/*`
-- 计划审批：`EnterPlanModePermissionRequest`、`ExitPlanModePermissionRequest`
-- 专项工具审批：如 bash、web fetch、skill、notebook edit
+- File-related UI: `FilePermissionDialog/*`
+- Rule-related UI: `permissions/rules/*`
+- Plan approval: `EnterPlanModePermissionRequest`, `ExitPlanModePermissionRequest`
+- Specialized tool approval: such as bash, web fetch, skill, notebook edit
 
-这组组件体现了一个原则：权限审批是场景化 UI，而不是统一模板硬套所有工具。
+This set of components embodies a principle: permission approval is scenario-specific UI, not a uniform template applied rigidly to all tools.
 
-## 3. tasks：后台任务工作台
+## 3. tasks: Background Task Workspace
 
-核心文件在 [`src/components/tasks`](../../src/components/tasks)。
+Core files are in [`src/components/tasks`](../../src/components/tasks).
 
-### 3.1 总入口
+### 3.1 Main Entry Point
 
-[`src/components/tasks/BackgroundTasksDialog.tsx`](../../src/components/tasks/BackgroundTasksDialog.tsx) 是任务面板的总入口。
+[`src/components/tasks/BackgroundTasksDialog.tsx`](../../src/components/tasks/BackgroundTasksDialog.tsx) is the main entry point for the task panel.
 
-它会从 `AppState.tasks` 中拿到后台任务，并进一步区分：
+It reads background tasks from `AppState.tasks` and further distinguishes:
 
 - local bash
 - remote agent
@@ -91,51 +91,51 @@ PromptInput / slash command / footer
 - monitor MCP
 - dream
 
-这说明“任务”在该项目里不是单一类型，而是统一抽象之上的多后端状态集合。
+This shows that "tasks" in this project are not a single type, but a multi-backend state collection above a unified abstraction.
 
-### 3.2 详情子组件
+### 3.2 Detail Sub-components
 
-任务详情分别交给：
+Task details are respectively delegated to:
 
 - `AsyncAgentDetailDialog`
 - `ShellDetailDialog`
 - `RemoteSessionDetailDialog`
 - `InProcessTeammateDetailDialog`
 - `DreamDetailDialog`
-- workflow/monitor 的 feature-gated detail dialog
+- Feature-gated detail dialogs for workflow/monitor
 
-也就是说，`BackgroundTasksDialog` 是状态机与列表视图控制器，具体任务说明则交由各自 detail 组件负责。
+In other words, `BackgroundTasksDialog` is the state machine and list view controller, while specific task descriptions are handled by their respective detail components.
 
-### 3.3 任务组件的设计含义
+### 3.3 Design Implications of Task Components
 
-这类组件把“后台执行体”正式纳入 UI：用户不是只能等待模型回答，而是可以查看 agent、shell、workflow、MCP monitor 的异步状态。
+These components formally incorporate "background execution bodies" into the UI: users are not limited to waiting for model responses, but can view the asynchronous status of agents, shells, workflows, and MCP monitors.
 
-## 4. agents：agent 生命周期管理界面
+## 4. agents: Agent Lifecycle Management Interface
 
-核心目录是 [`src/components/agents`](../../src/components/agents)。
+The core directory is [`src/components/agents`](../../src/components/agents).
 
-### 4.1 总入口
+### 4.1 Main Entry Point
 
-[`src/components/agents/AgentsMenu.tsx`](../../src/components/agents/AgentsMenu.tsx) 是 agent 管理总控。
+[`src/components/agents/AgentsMenu.tsx`](../../src/components/agents/AgentsMenu.tsx) is the agent management master controller.
 
-它负责：
+It is responsible for:
 
-- 汇总各来源 agent 定义
-- 按 source 分组展示
-- 合并 MCP tools 与本地 tools
-- 在列表、详情、编辑、创建向导之间切换
-- 删除 agent 后刷新 `AppState.agentDefinitions`
+- Aggregating agent definitions from various sources
+- Displaying grouped by source
+- Merging MCP tools and local tools
+- Switching between list, detail, edit, and creation wizard
+- Refreshing `AppState.agentDefinitions` after deleting an agent
 
-### 4.2 子组件分工
+### 4.2 Sub-component Division
 
-常规管理子组件：
+Regular management sub-components:
 
 - [`AgentDetail.tsx`](../../src/components/agents/AgentDetail.tsx)
 - [`AgentEditor.tsx`](../../src/components/agents/AgentEditor.tsx)
 - [`AgentsList.tsx`](../../src/components/agents/AgentsList.tsx)
 - [`AgentNavigationFooter.tsx`](../../src/components/agents/AgentNavigationFooter.tsx)
 
-编辑辅助子组件：
+Edit helper sub-components:
 
 - `ColorPicker`
 - `ModelSelector`
@@ -143,45 +143,45 @@ PromptInput / slash command / footer
 - `validateAgent`
 - `agentFileUtils`
 
-创建向导：
+Creation wizard:
 
 - [`new-agent-creation/CreateAgentWizard.tsx`](../../src/components/agents/new-agent-creation/CreateAgentWizard.tsx)
-- 以及 `wizard-steps/*`
+- And `wizard-steps/*`
 
-### 4.3 子组件亮点
+### 4.3 Sub-component Highlights
 
-[`AgentDetail.tsx`](../../src/components/agents/AgentDetail.tsx) 很有代表性。它不仅展示 agent 名称和描述，还直接展示：
+[`AgentDetail.tsx`](../../src/components/agents/AgentDetail.tsx) is very representative. It does not just display the agent name and description, but directly shows:
 
-- tools 解析结果
-- model
-- permission mode
-- memory scope
-- hooks
-- skills
-- 颜色
-- system prompt
+- Parsed tools results
+- Model
+- Permission mode
+- Memory scope
+- Hooks
+- Skills
+- Color
+- System prompt
 
-也就是说，agent 在 UI 中被视为一个完整运行时配置单元，而不是一段 prompt 文本。
+In other words, an agent is treated in the UI as a complete runtime configuration unit, not just a piece of prompt text.
 
-## 5. mcp：MCP 管理组件族
+## 5. mcp: MCP Management Component Family
 
-核心目录是 [`src/components/mcp`](../../src/components/mcp)。
+The core directory is [`src/components/mcp`](../../src/components/mcp).
 
-### 5.1 总入口
+### 5.1 Main Entry Point
 
-[`src/components/mcp/MCPSettings.tsx`](../../src/components/mcp/MCPSettings.tsx) 是 MCP 面板总入口。
+[`src/components/mcp/MCPSettings.tsx`](../../src/components/mcp/MCPSettings.tsx) is the main entry point for the MCP panel.
 
-它会从 `AppState.mcp` 与 `agentDefinitions` 中提取：
+It extracts from `AppState.mcp` and `agentDefinitions`:
 
-- 普通 MCP 客户端
-- agent 绑定的 MCP server
-- server transport 类型
-- 认证状态
-- 某 server 下有哪些 tools
+- Normal MCP clients
+- Agent-bound MCP servers
+- Server transport types
+- Authentication status
+- Tools available under a given server
 
-### 5.2 视图状态机
+### 5.2 View State Machine
 
-`MCPSettings` 内部不是单页面，而是一个带状态机的菜单系统，视图包括：
+`MCPSettings` is not a single-page view internally, but a menu system with a state machine. Views include:
 
 - list
 - server-menu
@@ -189,7 +189,7 @@ PromptInput / slash command / footer
 - server-tools
 - tool-detail
 
-对应子组件包括：
+Corresponding sub-components include:
 
 - `MCPListPanel`
 - `MCPStdioServerMenu`
@@ -198,120 +198,120 @@ PromptInput / slash command / footer
 - `MCPToolListView`
 - `MCPToolDetailView`
 
-把它画成状态机会更直观：
+It is more intuitive as a state machine diagram:
 
 ```text
-MCPSettings 视图状态机
+MCPSettings View State Machine
 
 list
-  -> server-menu
-     -> server-tools
-        -> tool-detail
-        -> 返回 server-tools
-     -> 返回 list
+ -> server-menu
+ -> server-tools
+ -> tool-detail
+ -> back to server-tools
+ -> back to list
 
 list
-  -> agent-server-menu
-     -> server-tools
-        -> tool-detail
-        -> 返回 server-tools
-     -> 返回 list
+ -> agent-server-menu
+ -> server-tools
+ -> tool-detail
+ -> back to server-tools
+ -> back to list
 ```
 
-### 5.3 设计评价
+### 5.3 Design Assessment
 
-MCP 在这里并不是“一个设置项”，而是被当作一级平台能力管理。UI 已经覆盖到：
+Here, MCP is not just "a settings item," but is treated as a first-class platform capability. The UI already covers:
 
-- transport 区分
-- auth 状态
-- tool 过滤
-- server 级与 tool 级双层浏览
+- Transport differentiation
+- Auth status
+- Tool filtering
+- Server-level and tool-level two-layer browsing
 
-这比很多 CLI 工具只做“列一下 MCP server 名称”要完整得多。
+This is far more complete than many CLI tools that only "list MCP server names."
 
-## 6. Settings：状态、配置与用量三分结构
+## 6. Settings: Three-Part Structure of Status, Config & Usage
 
-[`src/components/Settings/Settings.tsx`](../../src/components/Settings/Settings.tsx) 的结构很清楚：
+The structure of [`src/components/Settings/Settings.tsx`](../../src/components/Settings/Settings.tsx) is very clear:
 
 - `Status`
 - `Config`
 - `Usage`
-- ant-only 的 `Gates`
+- Ant-only `Gates`
 
-它的实现亮点在于：
+Its implementation highlights are:
 
-- 通过 `Tabs` 统一分页
-- 通过 `contentHeight` 适配 modal 与 terminal 两种尺寸
-- 允许 `Config` / `Gates` 临时接管 Esc，避免搜索态与全局取消键冲突
+- Unified page navigation via `Tabs`
+- Adapting to both modal and terminal sizes via `contentHeight`
+- Allowing `Config` / `Gates` to temporarily take over Esc, avoiding conflicts between search state and global cancel key
 
-这说明设置页并不是纯静态表单，而是带内部交互状态的工具面板。
+This shows that the settings page is not a purely static form, but a tool panel with internal interaction state.
 
-## 7. teams：多 agent 协作视图
+## 7. teams: Multi-Agent Collaboration View
 
-[`src/components/teams/TeamsDialog.tsx`](../../src/components/teams/TeamsDialog.tsx) 是 swarm/teammate 视图的 UI 总入口。
+[`src/components/teams/TeamsDialog.tsx`](../../src/components/teams/TeamsDialog.tsx) is the main UI entry for the swarm/teammate view.
 
-### 7.1 双层视图
+### 7.1 Two-Layer View
 
-它只有两个主要层级：
+It has only two main levels:
 
 - teammateList
 - teammateDetail
 
-但在行为上非常重，支持：
+But behavior-wise it is very heavy, supporting:
 
-- 查看 teammate 状态
-- 切换 permission mode
-- kill teammate
-- graceful shutdown
-- hide/show teammate pane
-- 一键 prune idle teammates
-- 进入对应输出 pane
+- Viewing teammate status
+- Switching permission mode
+- Killing a teammate
+- Graceful shutdown
+- Hide/show teammate pane
+- One-click prune idle teammates
+- Navigating to the corresponding output pane
 
-### 7.2 依赖的后端很多
+### 7.2 Many Backend Dependencies
 
-这个组件同时联通了：
+This component simultaneously connects to:
 
-- teammate mailbox
-- swarm backends registry
-- team helpers
-- tasks 工具
-- tmux/IT2 pane backend
+- Teammate mailbox
+- Swarm backends registry
+- Team helpers
+- Tasks utilities
+- Tmux/IT2 pane backend
 
-所以它其实是“多 agent 协作后端”的终端控制台，而不只是一个列表。
+So it is actually the terminal console for the "multi-agent collaboration backend," not just a list.
 
-从控制面角度看，tasks / teams / permissions 三者的关系大致如下：
+From a control plane perspective, the relationship between tasks, teams, and permissions is roughly as follows:
 
 ```text
-用户操作
-  -> BackgroundTasksDialog
-     -> AppState.tasks
-     -> agent / shell / workflow / remote runtime
+User Actions
+ -> BackgroundTasksDialog
+ -> AppState.tasks
+ -> agent / shell / workflow / remote runtime
 
-  -> TeamsDialog
-     -> teammate mailbox / swarm backends / pane state
-     -> agent / shell / workflow / remote runtime
+ -> TeamsDialog
+ -> teammate mailbox / swarm backends / pane state
+ -> agent / shell / workflow / remote runtime
 
-  -> PermissionRequest/*
-     -> ToolUseConfirm / permission rules / classifier state
-     -> agent / shell / workflow / remote runtime
+ -> PermissionRequest/*
+ -> ToolUseConfirm / permission rules / classifier state
+ -> agent / shell / workflow / remote runtime
 ```
 
-## 8. memory、skills、hooks、sandbox：配置与知识层面板
+## 8. memoryskillshookssandbox: Configuration & Knowledge Panels
 
 ### 8.1 memory
 
-memory 组件主要在 [`src/components/memory`](../../src/components/memory)。
+Memory components mainly live in [`src/components/memory`](../../src/components/memory).
 
-其中：
+Among them:
 
-- [`MemoryFileSelector.tsx`](../../src/components/memory/MemoryFileSelector.tsx) 负责浏览与打开用户、项目、auto-memory、team-memory、agent-memory 的入口
-- `MemoryUpdateNotification` 负责在记忆写入后提示用户路径
+- [`MemoryFileSelector.tsx`](../../src/components/memory/MemoryFileSelector.tsx) is responsible for browsing and opening entry points for user, project, auto-memory, team-memory, and agent-memory
+- `MemoryUpdateNotification` is responsible for notifying the user of the path after memory is written
 
-这组组件很重要，因为它把原本分散在多个目录下的 memory 文件系统，统一映射成用户可见入口。
+This set of components is important because it unifies the memory file system, which was originally scattered across multiple directories, into a single user-visible entry point.
 
 ### 8.2 skills
 
-[`src/components/skills/SkillsMenu.tsx`](../../src/components/skills/SkillsMenu.tsx) 用 source 维度展示 skills：
+[`src/components/skills/SkillsMenu.tsx`](../../src/components/skills/SkillsMenu.tsx) displays skills by source dimension:
 
 - policy
 - user
@@ -320,23 +320,23 @@ memory 组件主要在 [`src/components/memory`](../../src/components/memory)。
 - plugin
 - mcp
 
-它的价值在于把“技能”从文件系统散点变成了可浏览资产目录。
+Its value lies in turning "skills" from scattered file system points into a browsable asset catalog.
 
 ### 8.3 hooks
 
-[`src/components/hooks/HooksConfigMenu.tsx`](../../src/components/hooks/HooksConfigMenu.tsx) 是 hooks 配置浏览器。
+[`src/components/hooks/HooksConfigMenu.tsx`](../../src/components/hooks/HooksConfigMenu.tsx) is the hooks configuration browser.
 
-这个菜单刻意做成只读，支持：
+This menu is intentionally read-only, supporting:
 
-- 按 event 浏览
-- 按 matcher 浏览
-- 再查看具体 hook
+- Browsing by event
+- Browsing by matcher
+- Then viewing the specific hook
 
-这种设计比较务实：避免在终端里重复造一个 settings.json 编辑器。
+This design is pragmatic: it avoids reinventing a settings.json editor in the terminal.
 
 ### 8.4 sandbox
 
-[`src/components/sandbox`](../../src/components/sandbox) 下的组件把 sandbox 拆成：
+The components under [`src/components/sandbox`](../../src/components/sandbox) split sandbox into:
 
 - `SandboxSettings`
 - `SandboxConfigTab`
@@ -344,28 +344,28 @@ memory 组件主要在 [`src/components/memory`](../../src/components/memory)。
 - `SandboxOverridesTab`
 - `SandboxDoctorSection`
 
-这说明 sandbox 在项目里不是一个布尔开关，而是一整组可诊断、可配置、可覆盖的运行环境子系统。
+This shows that sandbox in this project is not a boolean toggle, but an entire set of diagnosable, configurable, overridable runtime environment subsystems.
 
-## 9. Grove 与策略/合规类组件
+## 9. Grove & Policy/Compliance Components
 
-[`src/components/grove/Grove.tsx`](../../src/components/grove/Grove.tsx) 很值得单独点出来。
+[`src/components/grove/Grove.tsx`](../../src/components/grove/Grove.tsx) is worth calling out separately.
 
-它处理的是：
+It handles:
 
-- 用户是否看到新 terms / policy notice
-- opt-in / opt-out / defer 的交互
-- 与 API 的设置同步
-- analytics 事件记录
+- Whether the user has seen new terms / policy notices
+- Opt-in / opt-out / defer interactions
+- Synchronization with API settings
+- Analytics event recording
 
-这类组件和 `TrustDialog`、`ManagedSettingsSecurityDialog` 一起，构成了项目中较少见但很重要的一类：合规与策略提示组件。
+These kinds of components, together with `TrustDialog` and `ManagedSettingsSecurityDialog`, form a less common but important category: compliance and policy notice components.
 
-## 10. design-system：终端设计系统的基座
+## 10. design-system: Foundation of the Terminal Design System
 
-设计系统目录在 [`src/components/design-system`](../../src/components/design-system)。
+The design system directory is at [`src/components/design-system`](../../src/components/design-system).
 
-### 10.1 关键基础件
+### 10.1 Key Building Blocks
 
-最核心的基础件包括：
+The most core building blocks include:
 
 - [`Dialog.tsx`](../../src/components/design-system/Dialog.tsx)
 - [`Pane.tsx`](../../src/components/design-system/Pane.tsx)
@@ -377,33 +377,33 @@ memory 组件主要在 [`src/components/memory`](../../src/components/memory)。
 - `KeyboardShortcutHint`
 - `Byline`
 
-### 10.2 代表性设计
+### 10.2 Representative Design
 
-`Dialog` 的设计显示出这套系统对终端输入冲突非常敏感：
+`Dialog`'s design shows this system is very sensitive to terminal input conflicts:
 
-- 内建 `confirm:no`
-- 支持 `isCancelActive`
-- 支持自定义 input guide
-- 支持 Ctrl+C/D 的 pending exit 提示
+- Built-in `confirm:no`
+- Supports `isCancelActive`
+- Supports custom input guide
+- Supports Ctrl+C/D pending exit prompt
 
-`ThemeProvider` 则说明主题系统不是简单字符串切换，它支持：
+`ThemeProvider` shows that the theme system is not a simple string switch; it supports:
 
-- theme setting 持久化
-- preview theme
-- auto theme
-- 监听终端系统主题变化
+- Theme setting persistence
+- Preview theme
+- Auto theme
+- Listening for terminal system theme changes
 
-这套 design-system 让上层业务组件能在统一交互语义上构建，而不必每个对话框自己处理快捷键和边框。
+This design-system allows upper-level business components to build on a unified interaction semantic, without each dialog having to handle shortcuts and borders by itself.
 
-## 11. 本章小结
+## 11. Chapter Summary
 
-平台能力组件的总判断是：
+The overall assessment of platform capability components is:
 
-- `permissions` 负责审批控制面。
-- `tasks` 负责异步执行工作台。
-- `agents` 负责 agent 生命周期管理。
-- `mcp` 负责外部能力接入管理。
-- `teams` 负责多 agent 协作控制。
-- `memory/skills/hooks/sandbox/settings` 负责配置、知识与运行环境的可视化入口。
+- `permissions` handles the approval control plane.
+- `tasks` handles the async execution workspace.
+- `agents` handles agent lifecycle management.
+- `mcp` handles external capability access management.
+- `teams` handles multi-agent collaboration control.
+- `memory/skills/hooks/sandbox/settings` handle configuration, knowledge, and runtime environment visualization entry points.
 
-换句话说，这套组件体系已经远超“聊天 UI”，而是在终端里实现了一套 agent 平台控制台。
+In other words, this component system has already far exceeded a "chat UI," implementing an agent platform console in the terminal.

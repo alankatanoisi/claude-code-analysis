@@ -1,3 +1,30 @@
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the REPL (Read-Eval-Print Loop) — the interactive UI layer.
+// It's the largest single file in the codebase (~5000 lines) because it
+// owns the complete interactive experience:
+//
+// RESPONSIBILITIES:
+// 1. AppState management: messages, input, permissions, tasks, remote status
+// 2. User input handling: text, history, suggestions, image paste, mode switching
+// 3. Permission dialogs: tool approval, bash command classification
+// 4. MCP integration: elicitation dialogs, server management
+// 5. Multi-agent: swarm initialization, teammate view, permission bridging
+// 6. Session management: resume, rename, cost tracking, worktree snapshots
+// 7. UI rendering: message list, spinner, cost display, notifications
+//
+// KEY PATTERN:
+// User input enters the execution kernel via query(). The REPL maintains
+// AppState (via useSyncExternalStore) and passes toolUseContext to query().
+// All tool permission decisions flow through the REPL's permission UI.
+//
+// SUBAGENT COMMUNICATION:
+// The REPL is the main thread's UI. Subagents communicate via:
+// - File-based mailbox (.claude/teams/{team}/inboxes/{agent}.json)
+// - In-process message passing (for in-process teammates)
+// - Leader permission bridge (teammates borrow leader's permission UI)
+// ============================================================================
+
 import { c as _c } from "react/compiler-runtime";
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle';

@@ -25,6 +25,29 @@ if (feature('ABLATION_BASELINE') && process.env.CLAUDE_CODE_ABLATION_BASELINE) {
   }
 }
 
+// ============================================================================
+// ARCHITECTURE NOTE (from source analysis):
+// This is the CLI ENTRY ROUTER — the very first code that runs when you
+// type `claude`. It implements FAST-PATH ROUTING to avoid loading the full
+// application for simple commands.
+//
+// FAST-PATH ROUTING (zero/full module loading):
+// --version: Zero imports beyond this file. Just prints MACRO.VERSION.
+// --dump-system-prompt: Loads only prompts.ts and model.ts. Used by evals.
+// --remote-control: Loads remote control module. For IDE integration.
+// --daemon-worker: Loads minimal worker module. For background tasks.
+//
+// WHY THIS MATTERS:
+// The full CLI loads ~80+ imports (main.tsx), sets up telemetry, connects
+// MCP servers, loads skills/agents, etc. For --version, this would add
+// ~500ms of unnecessary startup time. Fast-path routing keeps simple
+// commands under 50ms.
+//
+// ALL IMPORTS ARE DYNAMIC: This is deliberate. Static imports would defeat
+// the purpose of fast-path routing because they're evaluated at module
+// load time, before main() runs.
+// ============================================================================
+
 /**
  * Bootstrap entrypoint - checks for special flags before loading the full CLI.
  * All imports are dynamic to minimize module evaluation for fast paths.

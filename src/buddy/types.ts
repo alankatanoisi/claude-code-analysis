@@ -1,3 +1,34 @@
+// ============================================================================
+// EASTER EGG (from source analysis):
+// This is the BUDDY SYSTEM — a complete collectible companion UI hidden
+// inside Claude Code. It's a second character that comments in speech
+// bubbles, with pet interactions, ASCII sprites, and rarity tiers.
+//
+// BUDDY ARCHITECTURE:
+// - bones: Deterministic appearance (species, eyes, hat, color) seeded by userId
+// - soul: Model-generated personality (speech patterns, reactions)
+// - PRNG: mulberry32 seeded by userId for deterministic randomness
+//
+// SPECIES: 18 unique creatures, each with 3-frame ASCII animations
+// duck, goose, blob, cat, dragon, octopus, owl, penguin, turtle,
+// snail, ghost, axolotl, capybara, cactus, robot, rabbit, mushroom, chonk
+//
+// RARITY TIERS (weighted random selection):
+// - common: 60% chance
+// - uncommon: 25% chance
+// - rare: 10% chance
+// - epic: 4% chance
+// - legendary: 1% chance
+//
+// CUSTOMIZATION: 6 eye types, 8 hat types, 5 stats
+//
+// LAUNCH TIMING: April 1-7 teaser window, isBuddyLive() from April 2026
+//
+// WHY HEX ENCODING: Species names use String.fromCharCode to avoid
+// triggering the excluded-strings check (which scans build output for
+// model codenames). One species name collides with a canary codename.
+// ============================================================================
+
 export const RARITIES = [
   'common',
   'uncommon',
